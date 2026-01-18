@@ -10,6 +10,7 @@ namespace Frame {
 constexpr uint8_t FRAME_BOF = 0xc0;
 constexpr uint8_t FRAME_EOF = 0xc1;
 constexpr uint8_t FRAME_ESC = 0x7d;
+const char *lastError = "";
 
 static inline void writeEscaped(uint8_t b) {
     if (b == FRAME_BOF || b == FRAME_EOF || b == FRAME_ESC) {
@@ -22,89 +23,110 @@ static inline void writeEscaped(uint8_t b) {
 
 void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) {
 #ifdef DEBUG_WRITE
-    Serial.printf("> %02x %02x ", addr, control);
+    Serial.printf("> %02x %02x  ", addr, control);
     for (size_t i = 0; i < len; i++) Serial.printf("%02x ", data[i]);
     Serial.println("");
 #endif
 
     IRDA_UART.conf0.irda_tx_en = true;
-    // UART_LL_GET_HW(1)->conf0.irda_tx_en = true;
-    uint16_t checksum = 0;
+
     IRDA.write(FRAME_BOF);
+
     writeEscaped(addr);
+    uint16_t checksum = 0;
     checksum += addr;
+
     writeEscaped(control);
     checksum += control;
+
     for (size_t i = 0; i < len; i++) {
         uint8_t b = data[i];
         checksum += b;
         writeEscaped(b);
     }
-    IRDA.write((uint8_t)((checksum >> 8) & 0xff));
-    IRDA.write((uint8_t)(checksum & 0xff));
-    // writeEscaped((checksum >> 8) & 0xff);
-    // writeEscaped(checksum & 0xff);
+
+    // IRDA.write((uint8_t)((checksum >> 8) & 0xff));
+    // IRDA.write((uint8_t)(checksum & 0xff));
+    writeEscaped((checksum >> 8) & 0xff);
+    writeEscaped(checksum & 0xff);
+
     IRDA.write(FRAME_EOF);
+
     IRDA.flush(true);
     IRDA_UART.conf0.irda_tx_en = false;
 }
 
-/*
-void readFrame(bool wait = true) {
-bool isEscaped = false;
-if wait() {
-while (Serial.available() == 0) {
-// delay?
-}
-}
-uint8_t b = IRDA.read();
-if (b == )
-int checksum = 0;
-while (true) {
-//read one byte
-byte data = (byte)IRDA.read();
+bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t &control) {
+#ifdef DEBUG_READ
+    Serial.printf("< (raw) ");
+    for (size_t i = 0; i < len; i++) {
+        Serial.printf("%02x ", buf[i]);
+    }
+    Serial.println();
+#endif
 
-if (isEscaped) {
-if ((SPACE & data) != 0) {
-data = (byte)(data & 0xDF);
-} else {
-data = (byte)(data | SPACE);
-}
-isEscaped = false;
-} else {
-if (data == PACKET_START_BYTE) {
-isEscaped = true;
-continue;
-}
-if (data == ESCAPE_BYTE) {
-isEscaped = true;
-continue;
-}
-if (data == PACKET_END_BYTE) {
-break;
-}
-}
-checksum += data & 0xff;
-baos.write(data);
-}
+    uint16_t checksum = 0;
+    uint16_t expectedChecksum;
+    outLen = 0;
+    lastError = "";
 
-//check checksum
-byte[] retval = baos.toByteArray();
-checksum -= retval[retval.length - 1] & 0xff;
-checksum -= retval[retval.length - 2] & 0xff;
-checksum = checksum % 0x10000;
+    if (len < 6) {
+        lastError = "Read data shorter than minimum frame length";
+        return false;
+    }
+    if (buf[0] != FRAME_BOF) {
+        lastError = "Frame does not start with BOF";
+        return false;
+    }
 
-int value = (retval[retval.length - 2] & 0xff) * 0x100;
-value += retval[retval.length - 1] & 0xff;
-value = value % 0x10000;
+    addr = buf[1];
+    control = buf[2];
+    checksum += addr;
+    checksum += control;
 
-if (checksum != value) {
-log("Wrong checksum");
+    // Unescape, overwriting the buffer as it will only get shorter
+    // Stop before EOF, we already verified that (this also means we don't have to check length when unescaping)
+    for (size_t i = 3; i < len; i++) {
+        uint8_t b = buf[i];
+        // We could have gotten duplicate messages, end if this contains two (TODO this will drop messages...)
+        if (b == FRAME_EOF) {
+            len = i;
+            break;
+        }
+        if (b == FRAME_ESC && i + 1 < len) {
+            b = buf[++i] ^ 0x20;
+        }
+        // Rewrite the stream
+        buf[outLen++] = b;
+    }
+
+    if (outLen < 2) {
+        lastError = "Unescaped string too short";
+        return false;
+    }
+
+    expectedChecksum = (buf[outLen - 2] << 8) | (buf[outLen - 1]);
+    // When done the buffer will contain only the data frame, strip off the checksum
+    outLen -= 2;
+
+    for (size_t i = 0; i < outLen; i++) {
+        checksum += buf[i];
+    }
+
+#ifdef DEBUG_READ
+    Serial.printf("< %02x %02x  ", addr, control);
+    for (size_t i = 0; i < outLen; i++) {
+        Serial.printf("%02x ", buf[i]);
+    }
+    Serial.println();
+#endif
+
+    if (expectedChecksum != checksum) {
+        // maybe make this a warning until we're sure it works
+        log_w("Expected checksum %04x, calculated %04x", expectedChecksum, checksum);
+    }
+
+    return true;
 }
-
-log("r: " + bu.byteArrayToString(retval));
-return retval;
-}
-*/
 
 };  // namespace Frame

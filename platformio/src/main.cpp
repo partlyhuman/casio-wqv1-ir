@@ -33,32 +33,70 @@ void setup() {
     Serial.write("Done setup!");
 }
 
-uint8_t sessionId;
+constexpr size_t BUFFER_SIZE = 1024;
+static uint8_t readBuffer[BUFFER_SIZE];
+uint8_t sessionId = 0xff;
+size_t len;
+size_t dataLen;
+uint8_t addr;
+uint8_t ctrl;
 
-static uint8_t readBuffer[1024];
+static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expectedMinLength = -1) {
+    if (addr != expectedAddr) {
+        Serial.printf("Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
+        return false;
+    }
+    if (ctrl != expectedCtrl) {
+        Serial.printf("Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
+        return false;
+    }
+    if (expectedMinLength >= 0 && len < expectedMinLength) {
+        Serial.printf("Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
+        return false;
+    }
+    return true;
+}
 
 void connect() {
-    sessionId = 0xff;
-
-    size_t len;
-
     do {
         IRDA.flush();
-        // Possibly repeated
-        // delay(100);
-
-        Frame::writeFrame(0xff, 0xb3, nullptr, 0);
-
-        // wait for: FFh,A3h,<hh> <mm> <ss> <ff>
-        len = IRDA.readBytes(readBuffer, 1024);
+        Frame::writeFrame(0xff, 0xb3);
+        len = IRDA.readBytes(readBuffer, BUFFER_SIZE);
     } while (len < 2);
-
-    Serial.printf("Received %d bytes!\n< ", len);
-    // Echo to serial
-    for (size_t i = 0; i < len; i++) {
-        Serial.printf("%02x", readBuffer[i]);
+    if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
+        Serial.println(Frame::lastError);
     }
-    Serial.println();
+    // <hh> <mm> <ss> <ff>
+    if (!expect(0xff, 0xa3, 4)) {
+        Serial.println("Expected reply of FFh A3h <hh> <mm> <ss> <ff>");
+    }
+
+    // Generate session ID
+    sessionId = 4;
+    // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
+    readBuffer[4] = sessionId;
+    Frame::writeFrame(0xff, 0x93, readBuffer, 5);
+
+    len = IRDA.readBytes(readBuffer, BUFFER_SIZE);
+    if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
+        Serial.println(Frame::lastError);
+    }
+    if (!expect(sessionId, 0x63)) {
+        Serial.println("Expected reply of <adr> 63h");
+    }
+
+    // don't care if it's repeating itself
+    IRDA.flush();
+    Frame::writeFrame(sessionId, 0x11);
+    len = IRDA.readBytes(readBuffer, BUFFER_SIZE);
+    if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
+        Serial.println(Frame::lastError);
+    }
+    if (!expect(sessionId, 0x01)) {
+        Serial.println("Expected reply of <adr> 01h");
+    }
+
+    Serial.println("Handshake established!");
 
     // sessionId = 4;  // randomize?
     // static const uint8_t payload[] = { 0, 0, 0, 0, sessionId };
