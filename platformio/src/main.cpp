@@ -58,40 +58,39 @@ static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expect
 }
 
 void connect() {
+    log_i("\n\n--- HANDSHAKING ---");
     do {
-        IRDA.flush();
         Frame::writeFrame(0xff, 0xb3);
-        len = IRDA.readBytes(readBuffer, BUFFER_SIZE);
-    } while (len < 2);
-    if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
-        Serial.println(Frame::lastError);
-    }
-    // <hh> <mm> <ss> <ff>
+        len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
+    } while (len < Frame::FRAME_SIZE);
+    Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
     if (!expect(0xff, 0xa3, 4)) {
-        Serial.println("Expected reply of FFh A3h <hh> <mm> <ss> <ff>");
+        log_e("FAIL: Expected reply of FFh A3h <hh> <mm> <ss> <ff>");
+        return;
     }
 
     // Generate session ID
     sessionId = 4;
     // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
     readBuffer[4] = sessionId;
+
+    IRDA.flush();
     Frame::writeFrame(0xff, 0x93, readBuffer, 5);
-
-    len = IRDA.readBytes(readBuffer, BUFFER_SIZE);
-    if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
-        Serial.println(Frame::lastError);
-    }
+    do {
+        len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
+    } while (len == 0);
+    Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
     if (!expect(sessionId, 0x63)) {
-        Serial.println("Expected reply of <adr> 63h");
+        log_e("Expected reply of <adr> 63h");
+        return;
     }
 
-    // don't care if it's repeating itself
     IRDA.flush();
     Frame::writeFrame(sessionId, 0x11);
-    len = IRDA.readBytes(readBuffer, BUFFER_SIZE);
-    if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
-        Serial.println(Frame::lastError);
-    }
+    do {
+        len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
+    } while (len == 0);
+    Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
     if (!expect(sessionId, 0x01)) {
         Serial.println("Expected reply of <adr> 01h");
     }

@@ -7,11 +7,6 @@
 
 namespace Frame {
 
-constexpr uint8_t FRAME_BOF = 0xc0;
-constexpr uint8_t FRAME_EOF = 0xc1;
-constexpr uint8_t FRAME_ESC = 0x7d;
-const char *lastError = "";
-
 static inline void writeEscaped(uint8_t b) {
     if (b == FRAME_BOF || b == FRAME_EOF || b == FRAME_ESC) {
         IRDA.write(FRAME_ESC);
@@ -68,14 +63,13 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
     uint16_t checksum = 0;
     uint16_t expectedChecksum;
     outLen = 0;
-    lastError = "";
 
-    if (len < 6) {
-        lastError = "Read data shorter than minimum frame length";
+    if (len < FRAME_SIZE) {
+        log_e("Read data shorter than minimum frame length");
         return false;
     }
     if (buf[0] != FRAME_BOF) {
-        lastError = "Frame does not start with BOF";
+        log_e("Frame does not start with BOF");
         return false;
     }
 
@@ -90,6 +84,9 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
         uint8_t b = buf[i];
         // We could have gotten duplicate messages, end if this contains two (TODO this will drop messages...)
         if (b == FRAME_EOF) {
+            if (i < len - 1) {
+                log_e("Early EOF, likely multiple frames, dropping others");
+            }
             len = i;
             break;
         }
@@ -101,7 +98,7 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
     }
 
     if (outLen < 2) {
-        lastError = "Unescaped string too short";
+        log_e("Unescaped string too short");
         return false;
     }
 
