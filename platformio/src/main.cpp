@@ -43,15 +43,15 @@ uint8_t ctrl;
 
 static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expectedMinLength = -1) {
     if (addr != expectedAddr) {
-        Serial.printf("Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
+        log_d("Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
         return false;
     }
     if (ctrl != expectedCtrl) {
-        Serial.printf("Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
+        log_d("Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
         return false;
     }
     if (expectedMinLength >= 0 && len < expectedMinLength) {
-        Serial.printf("Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
+        log_d("Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
         return false;
     }
     return true;
@@ -59,14 +59,18 @@ static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expect
 
 void connect() {
     log_i("\n\n--- HANDSHAKING ---");
-    do {
+    while (true) {
         Frame::writeFrame(0xff, 0xb3);
         len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
-    } while (len < Frame::FRAME_SIZE);
-    Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
-    if (!expect(0xff, 0xa3, 4)) {
-        log_e("FAIL: Expected reply of FFh A3h <hh> <mm> <ss> <ff>");
-        return;
+        if (len == 0) {
+            log_e("Timeout");
+            continue;
+        }
+        Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
+        if (expect(0xff, 0xa3, 4)) {
+            log_i("Response OK");
+            break;
+        }
     }
 
     // Generate session ID
@@ -75,24 +79,33 @@ void connect() {
     readBuffer[4] = sessionId;
 
     IRDA.flush();
-    Frame::writeFrame(0xff, 0x93, readBuffer, 5);
-    do {
+    while (true) {
+        Frame::writeFrame(0xff, 0x93, readBuffer, 5);
         len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
-    } while (len == 0);
-    Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
-    if (!expect(sessionId, 0x63)) {
-        log_e("Expected reply of <adr> 63h");
-        return;
+        if (len == 0) {
+            log_e("Timeout");
+            return;
+        }
+        Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
+        if (expect(sessionId, 0x63)) {
+            log_i("Response OK");
+            break;
+        }
     }
 
     IRDA.flush();
-    Frame::writeFrame(sessionId, 0x11);
-    do {
+    while (true) {
+        Frame::writeFrame(sessionId, 0x11);
         len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
-    } while (len == 0);
-    Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
-    if (!expect(sessionId, 0x01)) {
-        Serial.println("Expected reply of <adr> 01h");
+        if (len == 0) {
+            log_e("Timeout");
+            return;
+        }
+        Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
+        if (expect(sessionId, 0x01)) {
+            log_i("Response OK");
+            break;
+        }
     }
 
     Serial.println("Handshake established!");

@@ -52,19 +52,19 @@ void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) 
 }
 
 bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t &control) {
-#ifdef DEBUG_READ
-    Serial.printf("< (raw) ");
-    for (size_t i = 0; i < len; i++) {
-        Serial.printf("%02x ", buf[i]);
-    }
-    Serial.println();
-#endif
+    // #ifdef DEBUG_READ
+    //     Serial.printf("< (raw) ");
+    //     for (size_t i = 0; i < len; i++) {
+    //         Serial.printf("%02x ", buf[i]);
+    //     }
+    //     Serial.println();
+    // #endif
 
     uint16_t checksum = 0;
     uint16_t expectedChecksum;
     outLen = 0;
 
-    if (len < FRAME_SIZE) {
+    if (len < FRAME_SIZE - 1) {
         log_e("Read data shorter than minimum frame length");
         return false;
     }
@@ -84,11 +84,8 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
         uint8_t b = buf[i];
         // We could have gotten duplicate messages, end if this contains two (TODO this will drop messages...)
         if (b == FRAME_EOF) {
-            if (i < len - 1) {
-                log_e("Early EOF, likely multiple frames, dropping others");
-            }
-            len = i;
-            break;
+            log_e("Early EOF, readUntilByte should have caught this");
+            return false;
         }
         if (b == FRAME_ESC && i + 1 < len) {
             b = buf[++i] ^ 0x20;
