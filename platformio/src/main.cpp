@@ -1,5 +1,6 @@
 #include "config.h"
 #include "frame.h"
+#include "image.h"
 
 void setup() {
     Serial.begin(115200);
@@ -19,22 +20,6 @@ void setup() {
     while (!IRDA);
 
     log_i("Setup complete");
-}
-
-struct __attribute__((packed)) Image {
-    char name[24];  // space padded
-    uint8_t year_minus_2000;
-    uint8_t month;
-    uint8_t day;
-    uint8_t minute;
-    uint8_t hour;
-    uint8_t pixel[120 * 120 / 2];  // one nibble per pixel
-};
-static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
-
-void debugPrintImage(const Image &img) {
-    log_i("Image '%s' taken %d/%d/%d %02d:%02d", img.name, img.month, img.day, (2000 + img.year_minus_2000), img.hour,
-          img.minute);
 }
 
 constexpr size_t BUFFER_SIZE = 1024;
@@ -144,7 +129,7 @@ bool prepareForUpload() {
 
     log_i("Upload preamble completed!");
 
-    size_t numBytes = sizeof(Image) * numImages;
+    size_t numBytes = sizeof(Image::Image) * numImages;
     uint8_t *imageBytes = new uint8_t[numBytes];
 
     uint8_t getPacketNum = 0x31;
@@ -172,18 +157,13 @@ bool prepareForUpload() {
         retPacketNum += 0x2;
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
-        log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image));
+        log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image::Image));
     }
 
     log_i("Done reading data!");
-    Image *images = reinterpret_cast<Image *>(imageBytes);
-    for (int i = 0; i < numImages; i++) {
-        // Null terminate strings
-        images[i].name[23] = '\0';
-        debugPrintImage(images[i]);
-    }
 
     log_i("Finishing sync");
+    delay(100);
     // >	<adr>	54h	06h
     sendRetry(sessionId, 0x54, args_6, 1);
     // <	<adr>	61h
@@ -194,6 +174,14 @@ bool prepareForUpload() {
     if (!expect(sessionId, 0x63)) return false;
 
     log_i("Completed!");
+
+    Image::Image *images = reinterpret_cast<Image::Image *>(imageBytes);
+    for (int i = 0; i < numImages; i++) {
+        // Null terminate strings
+        // images[i].name[23] = '\0';
+        Image::debug(images[i]);
+        Image::save(images[i]);
+    }
 
     delete[] imageBytes;
     return true;
