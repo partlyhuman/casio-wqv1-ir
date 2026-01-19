@@ -1,6 +1,3 @@
-#include <cstring>
-#include <vector>
-
 #include "config.h"
 #include "frame.h"
 
@@ -36,7 +33,7 @@ struct __attribute__((packed)) Image {
 static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
 
 void debugPrintImage(const Image &img) {
-    log_i("Image '%s' taken %d/%d/%d %02d:%02d", img.name, img.month, img.day, img.year_minus_2000 + 2000, img.hour,
+    log_i("Image '%s' taken %d/%d/%d %02d:%02d", img.name, img.month, img.day, (2000 + img.year_minus_2000), img.hour,
           img.minute);
 }
 
@@ -147,28 +144,42 @@ bool prepareForUpload() {
 
     log_i("Upload preamble completed!");
 
-    uint8_t getPacketNum = 0x31;  // java starts at 11...
-    uint8_t retPacketNum = 0x42;  // java starts at 40
+    size_t numBytes = sizeof(Image) * numImages;
+    uint8_t *imageBytes = new uint8_t[numBytes];
 
-    std::vector<uint8_t> imageBytes(sizeof(Image) * numImages);
-
-    for (size_t writeOffset = 0; writeOffset < imageBytes.size();) {
+    uint8_t getPacketNum = 0x31;
+    uint8_t retPacketNum = 0x42;
+    for (size_t writeOffset = 0; writeOffset < numBytes;) {
         sendRetry(sessionId, getPacketNum);
         if (!expect(sessionId, retPacketNum)) {
-            log_i("Mismatched Send %02x expect ret %02x", getPacketNum, retPacketNum);
+            log_i("Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
             continue;
         }
+        if (readBuffer[0] != 0x05) {
+            log_w("Expected data to start with 0x05, retrying");
+            continue;
+        }
+
+        size_t copyLen = dataLen - 1;  // skip the initial 0x05
+        if (writeOffset + copyLen > numBytes) {
+            log_e("Overflow: offset=%u len=%u size=%u", writeOffset, dataLen, numBytes);
+            break;
+        }
+        memcpy(imageBytes + writeOffset, readBuffer + 1, copyLen);
+        writeOffset += copyLen;
+
         getPacketNum = getPacketNum + 0x20;  // natural wraparound 0xF1 + 0x20 = 0x11
         retPacketNum += 0x2;
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
-        std::memcpy(imageBytes.data() + writeOffset, readBuffer, dataLen);
-        writeOffset += dataLen;
+
         log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image));
     }
 
     log_i("Done reading data!");
-    Image *images = reinterpret_cast<Image *>(imageBytes.data());
+    Image *images = reinterpret_cast<Image *>(imageBytes);
     for (int i = 0; i < numImages; i++) {
+        // Null terminate strings
+        images[i].name[23] = '\0';
         debugPrintImage(images[i]);
     }
 
@@ -184,6 +195,7 @@ bool prepareForUpload() {
 
     log_i("Completed!");
 
+    delete[] imageBytes;
     return true;
 }
 
