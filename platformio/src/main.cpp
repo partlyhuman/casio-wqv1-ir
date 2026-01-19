@@ -4,8 +4,11 @@
 
 void setup() {
     Serial.begin(115200);
-    delay(100);
+    delay(1000);
     while (!Serial);
+
+    log_i("Setup ----");
+    Image::init();
 
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
@@ -157,10 +160,26 @@ bool prepareForUpload() {
         retPacketNum += 0x2;
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
+        //// Debug - exit early
+        // if (writeOffset / sizeof(Image::Image) >= 1) {
+        //     log_i("Got 1 image, Exiting early.");
+        //     break;
+        //     numImages = 1;
+        // }
+
         log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image::Image));
     }
 
     log_i("Done reading data!");
+
+    // TODO this should go after finishing sync but that isn't working yet
+    Image::Image *images = reinterpret_cast<Image::Image *>(imageBytes);
+    for (int i = 0; i < numImages; i++) {
+        // Null terminate strings
+        // images[i].name[23] = '\0';
+        Image::debug(images[i]);
+        Image::save(images[i]);
+    }
 
     log_i("Finishing sync");
     delay(100);
@@ -174,14 +193,6 @@ bool prepareForUpload() {
     if (!expect(sessionId, 0x63)) return false;
 
     log_i("Completed!");
-
-    Image::Image *images = reinterpret_cast<Image::Image *>(imageBytes);
-    for (int i = 0; i < numImages; i++) {
-        // Null terminate strings
-        // images[i].name[23] = '\0';
-        Image::debug(images[i]);
-        Image::save(images[i]);
-    }
 
     delete[] imageBytes;
     return true;

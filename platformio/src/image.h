@@ -17,6 +17,7 @@ struct __attribute__((packed)) Image {
 };
 static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
 
+bool init();
 bool save(Image &img);
 bool debug(const Image &i);
 
