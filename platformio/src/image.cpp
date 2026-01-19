@@ -16,10 +16,6 @@ void debug(const Image &i) {
 static uint8_t expanded[W * H];
 
 bool init() {
-    // bool ret = !FFat.begin(true);
-    // if (!ret) log_e("Error starting FFAT");
-    // return ret;
-
     FFat.begin(true);
 
     Serial.println("Listing files in /ffat:");
@@ -36,12 +32,6 @@ bool init() {
     Serial.printf("%d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
     FFat.end();
     return true;
-}
-
-// context will be the pointer to our FFat file
-void stbi_ffat_write_func(void *context, void *data, int size) {
-    File *f = static_cast<File *>(context);
-    f->write((uint8_t *)data, size);
 }
 
 void sanitizedName(const Image &img, char *dst, size_t dst_size) {
@@ -67,6 +57,10 @@ void sanitizedName(const Image &img, char *dst, size_t dst_size) {
     }
 }
 
+void stbi_write_callback(void *context, void *data, int size) {
+    static_cast<File *>(context)->write((uint8_t *)data, size);
+}
+
 bool save(Image &img) {
     char name[25];
     static uint count = 0;
@@ -81,7 +75,6 @@ bool save(Image &img) {
         uint8_t b = img.pixel[i / 2];
         uint8_t pixel = (i % 2 == 0) ? b & 0xf : b >> 4;
         expanded[i] = 255 - pixel * 17;  // max value 0xf * 17 = 255
-                                         // Grayscale can be used with stb_image_write
     }
 
     log_i("Writing image to %s...", filename);
@@ -91,7 +84,7 @@ bool save(Image &img) {
         return false;
     }
     File f = FFat.open(filename, FILE_WRITE);
-    stbi_write_bmp_to_func(stbi_ffat_write_func, &f, W, H, 1, expanded);
+    stbi_write_bmp_to_func(stbi_write_callback, &f, W, H, 1, expanded);
     f.close();
 
     log_d("After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
