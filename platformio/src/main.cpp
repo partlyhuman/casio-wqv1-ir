@@ -1,3 +1,6 @@
+#include <cstring>
+#include <vector>
+
 #include "config.h"
 #include "frame.h"
 
@@ -21,13 +24,21 @@ void setup() {
     log_i("Setup complete");
 }
 
-struct {
+struct __attribute__((packed)) Image {
     char name[24];  // space padded
-    unsigned char year_minus_2000, month, day;
-    unsigned char minute, hour;
-
-    unsigned char pixel[120 * 120 / 2];  // one nibble per pixel
+    uint8_t year_minus_2000;
+    uint8_t month;
+    uint8_t day;
+    uint8_t minute;
+    uint8_t hour;
+    uint8_t pixel[120 * 120 / 2];  // one nibble per pixel
 };
+static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
+
+void debugPrintImage(const Image &img) {
+    log_i("Image '%s' taken %d/%d/%d %02d:%02d", img.name, img.month, img.day, img.year_minus_2000 + 2000, img.hour,
+          img.minute);
+}
 
 constexpr size_t BUFFER_SIZE = 1024;
 static uint8_t readBuffer[BUFFER_SIZE];
@@ -117,26 +128,67 @@ bool prepareForUpload() {
     log_i("--- UPLOAD ---");
 
     // >	<adr>	10h	01h
-    static const uint8_t cmd0[] = {0x1};
+    static const uint8_t args_1[] = {0x1};
     IRDA.flush();
-    sendRetry(sessionId, 0x10, cmd0, sizeof(cmd0));
+    sendRetry(sessionId, 0x10, args_1, sizeof(args_1));
     // <	<adr>	21h
     if (!expect(sessionId, 0x21)) return false;
     // >	<adr>	11h
     sendRetry(sessionId, 0x11);
-    // <	<adr>	20h	07h FAh 1Ch 3Dh 01h
+    // <	<adr>	20h	07h FAh 1Ch 3Dh <num_images>
     if (!expect(sessionId, 0x20, 5)) return false;
+    size_t numImages = readBuffer[4];
+    log_i("Watch says %d images available", numImages);
     // >	<adr>	32h	06h
-    static const uint8_t cmd1[] = {0x6};
-    sendRetry(sessionId, 0x32, cmd1, sizeof(cmd1));
+    static const uint8_t args_6[] = {0x6};
+    sendRetry(sessionId, 0x32, args_6, sizeof(args_6));
     // <	<adr>	41h
     if (!expect(sessionId, 0x41)) return false;
 
     log_i("Upload preamble completed!");
+
+    uint8_t getPacketNum = 0x31;  // java starts at 11...
+    uint8_t retPacketNum = 0x42;  // java starts at 40
+
+    std::vector<uint8_t> imageBytes(sizeof(Image) * numImages);
+
+    for (size_t writeOffset = 0; writeOffset < imageBytes.size();) {
+        sendRetry(sessionId, getPacketNum);
+        if (!expect(sessionId, retPacketNum)) {
+            log_i("Mismatched Send %02x expect ret %02x", getPacketNum, retPacketNum);
+            continue;
+        }
+        getPacketNum = getPacketNum + 0x20;  // natural wraparound 0xF1 + 0x20 = 0x11
+        retPacketNum += 0x2;
+        if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
+        std::memcpy(imageBytes.data() + writeOffset, readBuffer, dataLen);
+        writeOffset += dataLen;
+        log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image));
+    }
+
+    log_i("Done reading data!");
+    Image *images = reinterpret_cast<Image *>(imageBytes.data());
+    for (int i = 0; i < numImages; i++) {
+        debugPrintImage(images[i]);
+    }
+
+    log_i("Finishing sync");
+    // >	<adr>	54h	06h
+    sendRetry(sessionId, 0x54, args_6, 1);
+    // <	<adr>	61h
+    if (!expect(sessionId, 0x61)) return false;
+    // >	<adr>	53h
+    sendRetry(sessionId, 0x53);
+    // <	<adr>	63h
+    if (!expect(sessionId, 0x63)) return false;
+
+    log_i("Completed!");
+
     return true;
 }
 
 void loop() {
+    digitalWrite(LED_BUILTIN, HIGH);
     if (!handshake()) {
         delay(10000);
         return;
@@ -145,4 +197,7 @@ void loop() {
         delay(10000);
         return;
     }
+
+    digitalWrite(LED_BUILTIN, LOW);
+    while (true);
 }
