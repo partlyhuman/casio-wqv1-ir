@@ -11,14 +11,17 @@ struct __attribute__((packed)) Image {
     uint8_t year_minus_2000;
     uint8_t month;
     uint8_t day;
-    uint8_t minute;
+    // uint8_t minute;
+    // uint8_t hour;
+    // I feel like these are maybe reversed
     uint8_t hour;
+    uint8_t minute;
     uint8_t pixel[W * H / 2];  // one nibble per pixel
 };
 static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
 
 bool init();
 bool save(Image &img);
-bool debug(const Image &i);
+void debug(const Image &i);
 
 }  // namespace Image

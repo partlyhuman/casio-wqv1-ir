@@ -160,12 +160,12 @@ bool prepareForUpload() {
         retPacketNum += 0x2;
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
-        //// Debug - exit early
-        // if (writeOffset / sizeof(Image::Image) >= 1) {
-        //     log_i("Got 1 image, Exiting early.");
-        //     break;
-        //     numImages = 1;
-        // }
+        // Debug - exit early
+        if (writeOffset / sizeof(Image::Image) >= 1) {
+            log_i("Got 1 image, Exiting early.");
+            numImages = 1;
+            break;
+        }
 
         log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image::Image));
     }
