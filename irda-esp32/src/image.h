@@ -11,15 +11,14 @@ struct __attribute__((packed)) Image {
     uint8_t year_minus_2000;
     uint8_t month;
     uint8_t day;
-    uint8_t minute;
-    uint8_t hour;
+    uint8_t hour;              // Reversed from spec
+    uint8_t minute;            // Reversed from spec
     uint8_t pixel[W * H / 2];  // one nibble per pixel
 };
 static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
 
 bool init();
 bool save(const Image &img);
-void debug(const Image &img);
 void exportImagesFromDump(const char *path);
 
 }  // namespace Image

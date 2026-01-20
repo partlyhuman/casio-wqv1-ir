@@ -11,6 +11,8 @@
 #include "USBMSC.h"
 #include "config.h"
 
+#define READONLY
+
 namespace MassStorage {
 
 static const char* TAG = "MassStorage";
@@ -33,9 +35,10 @@ void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, 
     // Serial.printf("EVENT base=%d id=%d\n", event_base, event_id);
 }
 
-// If this never works, maybe we just make it do nothing (readonly FS)
 int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize) {
+#ifndef READONLY
     wl_write(flash_handle, (size_t)((lba * sect_size) + offset), (const void*)buffer, (size_t)bufsize);
+#endif
 
     // flash on writes
     static uint8_t f = HIGH;
@@ -68,10 +71,7 @@ bool onStartStop(uint8_t power_condition, bool start, bool load_eject) {
 }
 
 void init() {
-    // Start with a clean disk every time
-    FFat.format();
-
-    if (!FFat.begin(false)) {
+    if (!FFat.begin(true)) {
         return;
     }
 
@@ -93,6 +93,7 @@ void init() {
 }
 
 void begin() {
+    digitalWrite(PIN_LED, LED_OFF);
     Serial.end();
     MSC.mediaPresent(true);
 }

@@ -21,7 +21,9 @@ void onButton();
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial);
+    delay(100);
+    // Doing this means it doesn't start until serial connected?
+    // while (!Serial);
 
     MassStorage::init();
     Image::init();
@@ -148,7 +150,7 @@ bool downloadToFile(size_t imgCount, File &dump) {
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
         int curImg = offset / IMAGE_SIZE;
-        Serial.printf("Image %d/%d\t| %d bytes\t| %0.0f%%\n", curImg, imgCount, offset,
+        Serial.printf("Progress: image %d/%d\t| %d bytes\t| %0.0f%%\n", curImg + 1, imgCount, offset,
                       100.0f * offset / imgCount / IMAGE_SIZE);
     }
 
@@ -178,6 +180,12 @@ bool downloadImages() {
     if (!expect(sessionId, 0x41)) return false;
 
     ESP_LOGI(TAG, "Upload preamble completed!");
+
+    // Start every session with a fresh disk,
+    // but don't wipe until we are just about to save, in order to allow access to previous export
+    FFat.end();
+    FFat.format(false);
+    FFat.begin();
 
     File dump = FFat.open(DUMP_PATH, FILE_WRITE, true);
     downloadToFile(imgCount, dump);
@@ -223,6 +231,10 @@ void loop() {
                 closeSession();
                 Image::exportImagesFromDump(DUMP_PATH);
 
+                Serial.println("\n\nAttaching mass storage device, go look for your images!");
+                Serial.println("Don't forget to eject when done!");
+
+                Serial.flush();
                 mscMode = true;
                 MassStorage::begin();
             }
