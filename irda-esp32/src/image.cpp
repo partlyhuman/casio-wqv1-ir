@@ -56,7 +56,7 @@ bool save(const Image &img) {
     // snprintf(basepath, PATH_MAX_LEN, "/%02d_%d-%d-%d_%02d-%02d", ++count, img.month, img.day,
     //          (2000 + img.year_minus_2000), img.hour, img.minute);
 
-    Serial.printf("Writing image to %s...\n", basepath);
+    LOGI(TAG, "Writing image to %s...\n", basepath);
 
     // try to set timestamp when writing file
     setSystemTime(img);
@@ -82,25 +82,25 @@ bool save(const Image &img) {
         f.close();
     }
 
-    Serial.printf("After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
+    LOGI(TAG, "After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
 
     return true;
 }
 
-void exportImagesFromDump(const char *path) {
+void exportImagesFromDump(File &dump) {
     Image *img = new Image{};
 
-    // TODO only works with FLASH!
-
-    File dump = FFat.open(path, FILE_READ);
+    if (!dump) {
+        LOGE(TAG, "No file!");
+        return;
+    }
     size_t count = dump.size() / sizeof(Image);
     dump.seek(0);
     for (size_t i = 0; i < count; i++) {
-        Serial.printf("Reading out image %d/%d\n", i, count);
+        LOGD(TAG, "Reading out image %d/%d\n", i, count);
         dump.readBytes(reinterpret_cast<char *>(img), sizeof(Image));
         save(*img);
     }
-    dump.close();
 
     delete img;
 }

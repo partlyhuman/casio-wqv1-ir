@@ -21,9 +21,11 @@ static inline void writeEscaped(uint8_t b) {
 
 void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) {
 #ifdef DEBUG_WRITE
+#if LOG_LEVEL >= 3
     Serial.printf("> %02x %02x  ", addr, control);
     for (size_t i = 0; i < len; i++) Serial.printf("%02x ", data[i]);
     Serial.println("");
+#endif
 #endif
 
     IRDA_UART.conf0.irda_tx_en = true;
@@ -68,11 +70,11 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
     outLen = 0;
 
     if (len < FRAME_SIZE - 1) {
-        LOGE(TAG, "Read data shorter than minimum frame length");
+        ESP_LOGE(TAG, "Read data shorter than minimum frame length");
         return false;
     }
     if (buf[0] != FRAME_BOF) {
-        LOGE(TAG, "Frame does not start with BOF");
+        ESP_LOGE(TAG, "Frame does not start with BOF");
         return false;
     }
 
@@ -87,7 +89,7 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
         uint8_t b = buf[i];
         // We could have gotten duplicate messages, end if this contains two (TODO this will drop messages...)
         if (b == FRAME_EOF) {
-            LOGE(TAG, "Early EOF, readUntilByte should have caught this");
+            ESP_LOGE(TAG, "Early EOF, readUntilByte should have caught this");
             return false;
         }
         if (b == FRAME_ESC && i + 1 < len) {
@@ -98,7 +100,7 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
     }
 
     if (outLen < 2) {
-        LOGE(TAG, "Unescaped string too short");
+        ESP_LOGE(TAG, "Unescaped string too short");
         return false;
     }
 
@@ -111,16 +113,18 @@ bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t
     }
 
 #ifdef DEBUG_READ
+#if LOG_LEVEL >= 3
     Serial.printf("< %02x %02x  ", addr, control);
     for (size_t i = 0; i < outLen; i++) {
         Serial.printf("%02x ", buf[i]);
     }
     Serial.println();
 #endif
+#endif
 
     if (expectedChecksum != checksum) {
         // maybe make this a warning until we're sure it works
-        LOGW(TAG, "Expected checksum %04x, calculated %04x", expectedChecksum, checksum);
+        ESP_LOGW(TAG, "Expected checksum %04x, calculated %04x", expectedChecksum, checksum);
     }
 
     return true;

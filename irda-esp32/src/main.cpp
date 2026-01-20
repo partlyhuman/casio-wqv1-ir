@@ -1,10 +1,9 @@
 #include "FFat.h"
+#include "PSRamFS.h"
 #include "config.h"
-#include "esp32-hal-psram.h"
 #include "frame.h"
 #include "image.h"
 #include "log.h"
-#include "memstream.h"
 #include "msc.h"
 
 static const char *TAG = "Main";
@@ -13,8 +12,7 @@ static const char *DUMP_PATH = "/dump.bin";
 // Packets seem to be up to 192 bytes
 constexpr size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
-void *psramBuffer;
-size_t psramBufferLen;
+bool storedInPsram;
 uint8_t sessionId = 0xff;
 size_t len;
 size_t dataLen;
@@ -29,7 +27,9 @@ void setup() {
     // Doing this means it doesn't start until serial connected?
     // while (!Serial);
 
-    psramInit();
+    // about 1mb
+    PSRamFS.setPartitionSize(min(ESP.getFreePsram(), 99 * sizeof(Image::Image)));
+    PSRamFS.begin(true);
 
     MassStorage::init();
     Image::init();
@@ -156,8 +156,8 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
         int curImg = offset / IMAGE_SIZE;
-        Serial.printf("Progress: image %d/%d\t| %d bytes\t| %0.0f%%\n", curImg + 1, imgCount, offset,
-                      100.0f * offset / imgCount / IMAGE_SIZE);
+        LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%\n", curImg + 1, imgCount, offset,
+             100.0f * offset / imgCount / IMAGE_SIZE);
     }
 
     LOGI(TAG, "Done reading all images!");
@@ -193,22 +193,22 @@ bool downloadImages() {
     FFat.format(false);
     FFat.begin();
 
-    if (psramFound() && psramFound) {
+    size_t size = imgCount * sizeof(Image::Image);
+    File dump;
+    if (size < PSRamFS.freeBytes()) {
         LOGD(TAG, "Using psram");
-        psramBufferLen = imgCount * sizeof(Image::Image);
-        psramBuffer = ps_malloc(psramBufferLen);
-        if (psramBuffer == nullptr) {
-            LOGE(TAG, "Failed to allocate %d bytes of PSRAM", psramBufferLen);
-            return false;
-        }
-        WriteBufferStream stream(psramBuffer, psramBufferLen);
-        downloadToFile(imgCount, stream);
+        dump = PSRamFS.open(DUMP_PATH, FILE_WRITE);
+        storedInPsram = true;
     } else {
-        File dump = FFat.open(DUMP_PATH, FILE_WRITE, true);
-        if (!dump) return false;
-        downloadToFile(imgCount, dump);
-        dump.close();
+        dump = FFat.open(DUMP_PATH, FILE_WRITE);
+        storedInPsram = false;
     }
+    if (!dump) {
+        LOGE(TAG, "Failed to allocate file %d bytes", size);
+        return false;
+    }
+    downloadToFile(imgCount, dump);
+    dump.close();
 
     return true;
 }
@@ -248,10 +248,9 @@ void loop() {
         if (openSession()) {
             if (downloadImages()) {
                 closeSession();
-                if (psramBuffer != nullptr) {
-                    ReadBufferStream file(psramBuffer, psramBufferLen);
-                }
-                Image::exportImagesFromDump(DUMP_PATH);
+                File dump = storedInPsram ? PSRamFS.open(DUMP_PATH, FILE_READ) : FFat.open(DUMP_PATH, FILE_READ);
+                Image::exportImagesFromDump(dump);
+                dump.close();
 
                 Serial.println("\n\nAttaching mass storage device, go look for your images!");
                 Serial.println("Don't forget to eject when done!");

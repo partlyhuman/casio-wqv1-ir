@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
+#include "FS.h"
+
 namespace Image {
 
 constexpr size_t W = 120;
@@ -19,6 +21,6 @@ static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
 
 bool init();
 bool save(const Image &img);
-void exportImagesFromDump(const char *path);
+void exportImagesFromDump(File &dump);
 
 }  // namespace Image
