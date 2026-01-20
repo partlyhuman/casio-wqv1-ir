@@ -88,8 +88,10 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
     return false;
 }
 
-bool handshake() {
+bool openSession() {
     ESP_LOGI(TAG, "\n\n--- HANDSHAKING ---");
+
+    sessionId = 0xff;
 
     // >	FFh	B3h	(possibly repeated)
     Frame::writeFrame(0xff, 0xb3);
@@ -99,7 +101,7 @@ bool handshake() {
     if (!expect(0xff, 0xa3, 4)) return false;
 
     // Generate session ID
-    sessionId = 4;
+    sessionId = rand() % 0xff;
     // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
     readBuffer[4] = sessionId;
 
@@ -196,20 +198,25 @@ bool downloadImages() {
         Image::save(images[i]);
     }
 
-    ESP_LOGI(TAG, "Finishing sync");
-    delay(100);
+    ESP_LOGI(TAG, "Completed!");
+
+    delete[] imageBytes;
+    return true;
+}
+
+bool closeSession() {
+    ESP_LOGI(TAG, "Closing session...");
     // >	<adr>	54h	06h
-    sendRetry(sessionId, 0x54, args_6, 1);
+    static const uint8_t args_6[] = {0x6};
+    sendRetry(sessionId, 0x54, args_6, sizeof(args_6));
     // <	<adr>	61h
-    if (!expect(sessionId, 0x61)) return false;
+    if (!expect(sessionId, 0x43)) return false;
     // >	<adr>	53h
     sendRetry(sessionId, 0x53);
     // <	<adr>	63h
     if (!expect(sessionId, 0x63)) return false;
 
-    ESP_LOGI(TAG, "Completed!");
-
-    delete[] imageBytes;
+    sessionId = 0xff;
     return true;
 }
 
@@ -219,7 +226,6 @@ void onButton() {
     mscMode = !mscMode;
     Serial.printf("Changed mode -> %s\n", mscMode ? "MSC" : "IRDA");
     if (mscMode) {
-        Serial.end();
         MassStorage::begin();
     } else {
         MassStorage::end();
@@ -231,8 +237,9 @@ void loop() {
         yield();
     } else {
         digitalWrite(PIN_LED, LED_ON);
-        if (handshake()) {
+        if (openSession()) {
             if (downloadImages()) {
+                closeSession();
                 mscMode = true;
                 MassStorage::begin();
             }
