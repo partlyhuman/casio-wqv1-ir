@@ -1,11 +1,12 @@
 #pragma once
 #include <Arduino.h>
 
+#include "BufferStream.h"
 #include "Print.h"
 #include "log.h"
 #include "math.h"
 
-class MemStream : public Print {
+class MemStream : public File {
    private:
     uint8_t *head;
     size_t offset = 0;
@@ -18,10 +19,15 @@ class MemStream : public Print {
             LOGE("MemStream", "Failed to allocate %d bytes in psram", len);
             len = 0;
         }
+        ReadBufferStream()
     }
     ~MemStream() {
         free(head);
     }
+    virtual int available() = 0;
+    virtual int read() = 0;
+    virtual int peek() = 0;
+
     size_t write(uint8_t b) {
         if (availableForWrite() > 0) {
             head[offset++] = b;

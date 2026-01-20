@@ -90,6 +90,8 @@ bool save(const Image &img) {
 void exportImagesFromDump(const char *path) {
     Image *img = new Image{};
 
+    // TODO only works with FLASH!
+
     File dump = FFat.open(path, FILE_READ);
     size_t count = dump.size() / sizeof(Image);
     dump.seek(0);

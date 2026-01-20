@@ -13,7 +13,8 @@ static const char *DUMP_PATH = "/dump.bin";
 // Packets seem to be up to 192 bytes
 constexpr size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
-MemStream *psram;
+void *psramBuffer;
+size_t psramBufferLen;
 uint8_t sessionId = 0xff;
 size_t len;
 size_t dataLen;
@@ -127,7 +128,7 @@ bool openSession() {
     return true;
 }
 
-bool downloadToFile(size_t imgCount, Print &stream) {
+bool downloadToFile(size_t imgCount, Stream &stream) {
     // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
     constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
 
@@ -192,10 +193,16 @@ bool downloadImages() {
     FFat.format(false);
     FFat.begin();
 
-    if (psramFound()) {
+    if (psramFound() && psramFound) {
         LOGD(TAG, "Using psram");
-        psram = new MemStream(imgCount * sizeof(Image::Image));
-        downloadToFile(imgCount, *psram);
+        psramBufferLen = imgCount * sizeof(Image::Image);
+        psramBuffer = ps_malloc(psramBufferLen);
+        if (psramBuffer == nullptr) {
+            LOGE(TAG, "Failed to allocate %d bytes of PSRAM", psramBufferLen);
+            return false;
+        }
+        WriteBufferStream stream(psramBuffer, psramBufferLen);
+        downloadToFile(imgCount, stream);
     } else {
         File dump = FFat.open(DUMP_PATH, FILE_WRITE, true);
         if (!dump) return false;
@@ -241,7 +248,8 @@ void loop() {
         if (openSession()) {
             if (downloadImages()) {
                 closeSession();
-                if (psramFound && psram) {
+                if (psramBuffer != nullptr) {
+                    ReadBufferStream file(psramBuffer, psramBufferLen);
                 }
                 Image::exportImagesFromDump(DUMP_PATH);
 
