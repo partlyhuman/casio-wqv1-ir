@@ -1,8 +1,10 @@
 #include "FFat.h"
 #include "config.h"
+#include "esp32-hal-psram.h"
 #include "frame.h"
 #include "image.h"
 #include "log.h"
+#include "memstream.h"
 #include "msc.h"
 
 static const char *TAG = "Main";
@@ -11,6 +13,7 @@ static const char *DUMP_PATH = "/dump.bin";
 // Packets seem to be up to 192 bytes
 constexpr size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
+MemStream *psram;
 uint8_t sessionId = 0xff;
 size_t len;
 size_t dataLen;
@@ -24,6 +27,8 @@ void setup() {
     delay(100);
     // Doing this means it doesn't start until serial connected?
     // while (!Serial);
+
+    psramInit();
 
     MassStorage::init();
     Image::init();
@@ -122,7 +127,7 @@ bool openSession() {
     return true;
 }
 
-bool downloadToFile(size_t imgCount, File &dump) {
+bool downloadToFile(size_t imgCount, Print &stream) {
     // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
     constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
 
@@ -141,7 +146,7 @@ bool downloadToFile(size_t imgCount, File &dump) {
 
         // skip the initial 0x05
         size_t packetLen = dataLen - 1;
-        dump.write(readBuffer + 1, packetLen);
+        stream.write(readBuffer + 1, packetLen);
         offset += packetLen;
 
         // increment packet ids
@@ -187,9 +192,16 @@ bool downloadImages() {
     FFat.format(false);
     FFat.begin();
 
-    File dump = FFat.open(DUMP_PATH, FILE_WRITE, true);
-    downloadToFile(imgCount, dump);
-    dump.close();
+    if (psramFound()) {
+        LOGD(TAG, "Using psram");
+        psram = new MemStream(imgCount * sizeof(Image::Image));
+        downloadToFile(imgCount, *psram);
+    } else {
+        File dump = FFat.open(DUMP_PATH, FILE_WRITE, true);
+        if (!dump) return false;
+        downloadToFile(imgCount, dump);
+        dump.close();
+    }
 
     return true;
 }
@@ -229,6 +241,8 @@ void loop() {
         if (openSession()) {
             if (downloadImages()) {
                 closeSession();
+                if (psramFound && psram) {
+                }
                 Image::exportImagesFromDump(DUMP_PATH);
 
                 Serial.println("\n\nAttaching mass storage device, go look for your images!");
