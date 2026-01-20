@@ -10,6 +10,7 @@
 #include "USB.h"
 #include "USBMSC.h"
 #include "config.h"
+#include "log.h"
 
 #define READONLY
 

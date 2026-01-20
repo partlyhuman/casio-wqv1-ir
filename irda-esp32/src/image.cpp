@@ -2,6 +2,7 @@
 
 #include "FFat.h"
 #include "ctime"
+#include "log.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 

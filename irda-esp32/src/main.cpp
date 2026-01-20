@@ -1,8 +1,8 @@
 #include "FFat.h"
 #include "config.h"
-#include "esp_log.h"
 #include "frame.h"
 #include "image.h"
+#include "log.h"
 #include "msc.h"
 
 static const char *TAG = "Main";
@@ -44,20 +44,20 @@ void setup() {
     IRDA.setMode(UART_MODE_IRDA);
     while (!IRDA);
 
-    ESP_LOGI(TAG, "Setup complete");
+    LOGI(TAG, "Setup complete");
 }
 
 static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expectedMinLength = -1) {
     if (addr != expectedAddr) {
-        ESP_LOGD(TAG, "Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
+        LOGD(TAG, "Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
         return false;
     }
     if (ctrl != expectedCtrl) {
-        ESP_LOGD(TAG, "Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
+        LOGD(TAG, "Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
         return false;
     }
     if (expectedMinLength >= 0 && len < expectedMinLength) {
-        ESP_LOGD(TAG, "Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
+        LOGD(TAG, "Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
         return false;
     }
     return true;
@@ -72,16 +72,16 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
         digitalWrite(PIN_LED, LED_OFF);
 
         if (len <= 0) {
-            ESP_LOGW(TAG, "Timeout, retrying %d...", retry);
+            LOGW(TAG, "Timeout, retrying %d...", retry);
             continue;
         }
         if (len == BUFFER_SIZE) {
-            ESP_LOGE(TAG, "Filled buffer up all the way, probably dropping content");
+            LOGE(TAG, "Filled buffer up all the way, probably dropping content");
             return false;
         }
 
         if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
-            ESP_LOGW(TAG, "Malformed, retrying %d...", retry);
+            LOGW(TAG, "Malformed, retrying %d...", retry);
             continue;
         }
         return true;
@@ -90,7 +90,7 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
 }
 
 bool openSession() {
-    ESP_LOGI(TAG, "\n\n--- HANDSHAKING ---");
+    LOGI(TAG, "\n\n--- HANDSHAKING ---");
 
     sessionId = 0xff;
 
@@ -118,7 +118,7 @@ bool openSession() {
         // <	<adr>	01h
     } while (!expect(sessionId, 0x01));
 
-    ESP_LOGI(TAG, "Handshake established!");
+    LOGI(TAG, "Handshake established!");
     return true;
 }
 
@@ -131,11 +131,11 @@ bool downloadToFile(size_t imgCount, File &dump) {
     for (size_t offset = 0; offset < IMAGE_SIZE * imgCount;) {
         sendRetry(sessionId, getPacketNum);
         if (!expect(sessionId, retPacketNum)) {
-            ESP_LOGI(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
+            LOGI(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
             continue;
         }
         if (readBuffer[0] != 0x05) {
-            ESP_LOGW(TAG, "Expected data to start with 0x05, retrying");
+            LOGW(TAG, "Expected data to start with 0x05, retrying");
             continue;
         }
 
@@ -154,12 +154,12 @@ bool downloadToFile(size_t imgCount, File &dump) {
                       100.0f * offset / imgCount / IMAGE_SIZE);
     }
 
-    ESP_LOGI(TAG, "Done reading all images!");
+    LOGI(TAG, "Done reading all images!");
     return true;
 }
 
 bool downloadImages() {
-    ESP_LOGI(TAG, "--- UPLOAD ---");
+    LOGI(TAG, "--- UPLOAD ---");
 
     // >	<adr>	10h	01h
     static const uint8_t args_1[] = {0x1};
@@ -172,14 +172,14 @@ bool downloadImages() {
     // <	<adr>	20h	07h FAh 1Ch 3Dh <num_images>
     if (!expect(sessionId, 0x20, 5)) return false;
     size_t imgCount = readBuffer[4];
-    ESP_LOGI(TAG, "Watch says %d images available", imgCount);
+    LOGI(TAG, "Watch says %d images available", imgCount);
     // >	<adr>	32h	06h
     static const uint8_t args_6[] = {0x6};
     sendRetry(sessionId, 0x32, args_6, sizeof(args_6));
     // <	<adr>	41h
     if (!expect(sessionId, 0x41)) return false;
 
-    ESP_LOGI(TAG, "Upload preamble completed!");
+    LOGI(TAG, "Upload preamble completed!");
 
     // Start every session with a fresh disk,
     // but don't wipe until we are just about to save, in order to allow access to previous export
@@ -195,7 +195,7 @@ bool downloadImages() {
 }
 
 bool closeSession() {
-    ESP_LOGI(TAG, "Closing session...");
+    LOGI(TAG, "Closing session...");
     // >	<adr>	54h	06h
     static const uint8_t args_6[] = {0x6};
     sendRetry(sessionId, 0x54, args_6, sizeof(args_6));
