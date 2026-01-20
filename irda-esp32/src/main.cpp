@@ -1,17 +1,28 @@
 #include "config.h"
+#include "esp_log.h"
 #include "frame.h"
 #include "image.h"
+#include "msc.h"
+
+static const char *TAG = "Main";
+
+void onButton();
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
     while (!Serial);
 
-    log_i("Setup ----");
+    ESP_LOGI(TAG, "Setup ----");
+    MassStorage::init();
     Image::init();
 
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH);
+    pinMode(PIN_LED, OUTPUT);
+    digitalWrite(PIN_LED, LED_OFF);
+
+    pinMode(PIN_BUTTON, INPUT_PULLUP);
+    attachInterrupt(PIN_BUTTON, onButton, FALLING);
 
     // Shutdown pin, could also tie to ground
     pinMode(PIN_SD, OUTPUT);
@@ -22,7 +33,7 @@ void setup() {
     IRDA.setMode(UART_MODE_IRDA);
     while (!IRDA);
 
-    log_i("Setup complete");
+    ESP_LOGI(TAG, "Setup complete");
 }
 
 constexpr size_t BUFFER_SIZE = 1024;
@@ -35,15 +46,15 @@ uint8_t ctrl;
 
 static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expectedMinLength = -1) {
     if (addr != expectedAddr) {
-        log_d("Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
+        ESP_LOGD(TAG, "Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
         return false;
     }
     if (ctrl != expectedCtrl) {
-        log_d("Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
+        ESP_LOGD(TAG, "Expected ctrl=%02x got ctrl=%02x\n", expectedCtrl, ctrl);
         return false;
     }
     if (expectedMinLength >= 0 && len < expectedMinLength) {
-        log_d("Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
+        ESP_LOGD(TAG, "Expected at least %d bytes of data, got %d\n", expectedMinLength, len);
         return false;
     }
     return true;
@@ -52,7 +63,7 @@ static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expect
 bool readFrame() {
     len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
     if (len == 0) {
-        log_w("Timeout");
+        ESP_LOGW(TAG, "Timeout");
         return false;
     }
     return Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl);
@@ -61,13 +72,15 @@ bool readFrame() {
 bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, int retries = 5) {
     for (int retry = 0; retry < retries; retry++) {
         Frame::writeFrame(a, c, d, l);
+        digitalWrite(PIN_LED, LED_ON);
         len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
+        digitalWrite(PIN_LED, LED_OFF);
         if (len <= 0) {
-            log_w("Timeout, retrying %d...", retry);
+            ESP_LOGW(TAG, "Timeout, retrying %d...", retry);
             continue;
         }
         if (!Frame::parseFrame(readBuffer, len, dataLen, addr, ctrl)) {
-            log_w("Malformed, retrying %d...", retry);
+            ESP_LOGW(TAG, "Malformed, retrying %d...", retry);
             continue;
         }
         return true;
@@ -76,13 +89,14 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
 }
 
 bool handshake() {
-    log_i("\n\n--- HANDSHAKING ---");
-    do {
-        // >	FFh	B3h	(possibly repeated)
-        Frame::writeFrame(0xff, 0xb3);
-        if (!readFrame()) continue;
-        // <	FFh	A3h	<hh> <mm> <ss> <ff>
-    } while (!expect(0xff, 0xa3, 4));
+    ESP_LOGI(TAG, "\n\n--- HANDSHAKING ---");
+
+    // >	FFh	B3h	(possibly repeated)
+    Frame::writeFrame(0xff, 0xb3);
+    // if (!readFrame()) continue;
+    if (!readFrame()) return false;
+    // <	FFh	A3h	<hh> <mm> <ss> <ff>
+    if (!expect(0xff, 0xa3, 4)) return false;
 
     // Generate session ID
     sessionId = 4;
@@ -105,12 +119,12 @@ bool handshake() {
         // <	<adr>	01h
     } while (!expect(sessionId, 0x01));
 
-    log_i("Handshake established!");
+    ESP_LOGI(TAG, "Handshake established!");
     return true;
 }
 
-bool prepareForUpload() {
-    log_i("--- UPLOAD ---");
+bool downloadImages() {
+    ESP_LOGI(TAG, "--- UPLOAD ---");
 
     // >	<adr>	10h	01h
     static const uint8_t args_1[] = {0x1};
@@ -123,14 +137,14 @@ bool prepareForUpload() {
     // <	<adr>	20h	07h FAh 1Ch 3Dh <num_images>
     if (!expect(sessionId, 0x20, 5)) return false;
     size_t numImages = readBuffer[4];
-    log_i("Watch says %d images available", numImages);
+    ESP_LOGI(TAG, "Watch says %d images available", numImages);
     // >	<adr>	32h	06h
     static const uint8_t args_6[] = {0x6};
     sendRetry(sessionId, 0x32, args_6, sizeof(args_6));
     // <	<adr>	41h
     if (!expect(sessionId, 0x41)) return false;
 
-    log_i("Upload preamble completed!");
+    ESP_LOGI(TAG, "Upload preamble completed!");
 
     size_t numBytes = sizeof(Image::Image) * numImages;
     uint8_t *imageBytes = new uint8_t[numBytes];
@@ -140,17 +154,17 @@ bool prepareForUpload() {
     for (size_t writeOffset = 0; writeOffset < numBytes;) {
         sendRetry(sessionId, getPacketNum);
         if (!expect(sessionId, retPacketNum)) {
-            log_i("Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
+            ESP_LOGI(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
             continue;
         }
         if (readBuffer[0] != 0x05) {
-            log_w("Expected data to start with 0x05, retrying");
+            ESP_LOGW(TAG, "Expected data to start with 0x05, retrying");
             continue;
         }
 
         size_t copyLen = dataLen - 1;  // skip the initial 0x05
         if (writeOffset + copyLen > numBytes) {
-            log_e("Overflow: offset=%u len=%u size=%u", writeOffset, dataLen, numBytes);
+            ESP_LOGE(TAG, "Overflow: offset=%u len=%u size=%u", writeOffset, dataLen, numBytes);
             break;
         }
         memcpy(imageBytes + writeOffset, readBuffer + 1, copyLen);
@@ -162,15 +176,16 @@ bool prepareForUpload() {
 
         // Debug - exit early
         // if (writeOffset / sizeof(Image::Image) >= 1) {
-        //     log_i("Got 1 image, Exiting early.");
+        //     ESP_LOGI(TAG, "Got 1 image, Exiting early.");
         //     numImages = 1;
         //     break;
         // }
 
-        log_i("Read %d bytes, total %d bytes / %d images", dataLen, writeOffset, writeOffset / sizeof(Image::Image));
+        ESP_LOGI(TAG, "Read %d bytes, total %d bytes / %d images", dataLen, writeOffset,
+                 writeOffset / sizeof(Image::Image));
     }
 
-    log_i("Done reading data!");
+    ESP_LOGI(TAG, "Done reading data!");
 
     // TODO this should go after finishing sync but that isn't working yet
     Image::Image *images = reinterpret_cast<Image::Image *>(imageBytes);
@@ -181,7 +196,7 @@ bool prepareForUpload() {
         Image::save(images[i]);
     }
 
-    log_i("Finishing sync");
+    ESP_LOGI(TAG, "Finishing sync");
     delay(100);
     // >	<adr>	54h	06h
     sendRetry(sessionId, 0x54, args_6, 1);
@@ -192,23 +207,38 @@ bool prepareForUpload() {
     // <	<adr>	63h
     if (!expect(sessionId, 0x63)) return false;
 
-    log_i("Completed!");
+    ESP_LOGI(TAG, "Completed!");
 
     delete[] imageBytes;
     return true;
 }
 
-void loop() {
-    digitalWrite(LED_BUILTIN, HIGH);
-    if (!handshake()) {
-        delay(10000);
-        return;
-    }
-    if (!prepareForUpload()) {
-        delay(10000);
-        return;
-    }
+volatile bool mscMode = false;
 
-    digitalWrite(LED_BUILTIN, LOW);
-    while (true);
+void onButton() {
+    mscMode = !mscMode;
+    Serial.printf("Changed mode -> %s\n", mscMode ? "MSC" : "IRDA");
+    if (mscMode) {
+        Serial.end();
+        MassStorage::begin();
+    } else {
+        MassStorage::end();
+    }
+}
+
+void loop() {
+    if (mscMode) {
+        yield();
+    } else {
+        digitalWrite(PIN_LED, LED_ON);
+        if (handshake()) {
+            if (downloadImages()) {
+                mscMode = true;
+                MassStorage::begin();
+            }
+        } else {
+            delay(1000);
+        }
+        digitalWrite(PIN_LED, LED_OFF);
+    }
 }

@@ -9,28 +9,31 @@
 
 namespace Image {
 
+static const char *TAG = "Image";
+
 void debug(const Image &i) {
-    log_i("Image '%s' taken %d/%d/%d %02d:%02d", i.name, i.month, i.day, (2000 + i.year_minus_2000), i.hour, i.minute);
+    Serial.printf("Image '%s' taken %d/%d/%d %02d:%02d", i.name, i.month, i.day, (2000 + i.year_minus_2000), i.hour,
+                  i.minute);
 }
 
 static uint8_t expanded[W * H];
 
 bool init() {
-    FFat.begin(true);
+    // FFat.begin(true);
 
-    Serial.println("Listing files in /ffat:");
-    File root = FFat.open("/");
-    File file = root.openNextFile();
-    while (file) {
-        Serial.println(String(file.name()));
-        file.close();
-        file = root.openNextFile();
-    }
-    file.close();
-    root.close();
-    Serial.println("End");
-    Serial.printf("%d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
-    FFat.end();
+    // Serial.println("Listing files in /ffat:");
+    // File root = FFat.open("/");
+    // File file = root.openNextFile();
+    // while (file) {
+    //     Serial.println(String(file.name()));
+    //     file.close();
+    //     file = root.openNextFile();
+    // }
+    // file.close();
+    // root.close();
+    // Serial.println("End");
+    // Serial.printf("%d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
+    // FFat.end();
     return true;
 }
 
@@ -77,18 +80,18 @@ bool save(Image &img) {
         expanded[i] = 255 - pixel * 17;  // max value 0xf * 17 = 255
     }
 
-    log_i("Writing image to %s...", filename);
+    Serial.printf("Writing image to %s...", filename);
 
-    if (!FFat.begin()) {
-        log_e("Failed to open filesystem");
-        return false;
-    }
+    // if (!FFat.begin()) {
+    //     ESP_LOGE(TAG, "Failed to open filesystem");
+    //     return false;
+    // }
     File f = FFat.open(filename, FILE_WRITE);
     stbi_write_bmp_to_func(stbi_write_callback, &f, W, H, 1, expanded);
     f.close();
 
-    log_d("After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
-    FFat.end();
+    ESP_LOGD(TAG, "After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
+    // FFat.end();
 
     return true;
 }
