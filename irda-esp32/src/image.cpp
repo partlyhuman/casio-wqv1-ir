@@ -19,21 +19,6 @@ void debug(const Image &i) {
 static uint8_t expanded[W * H];
 
 bool init() {
-    // FFat.begin(true);
-
-    // Serial.println("Listing files in /ffat:");
-    // File root = FFat.open("/");
-    // File file = root.openNextFile();
-    // while (file) {
-    //     Serial.println(String(file.name()));
-    //     file.close();
-    //     file = root.openNextFile();
-    // }
-    // file.close();
-    // root.close();
-    // Serial.println("End");
-    // Serial.printf("%d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
-    // FFat.end();
     return true;
 }
 
@@ -60,38 +45,37 @@ void sanitizedName(const Image &img, char *dst, size_t dst_size) {
     }
 }
 
-void stbi_write_callback(void *context, void *data, int size) {
-    static_cast<File *>(context)->write((uint8_t *)data, size);
+void stbi_write_cb(void *context, void *data, int size) {
+    ((File *)context)->write((uint8_t *)data, size);
 }
 
-bool save(Image &img) {
-    char name[25];
+bool save(const Image &img) {
     static uint count = 0;
-    sanitizedName(img, name, 25);
+    // char name[25];
+    // sanitizedName(img, name, 25);
 
+    // Filenames need to start with / and the base path of /ffat is transparently handled by FFat
     char filename[128];
-    snprintf(filename, 128, "/%s_%d-%d-%d_%02d-%02d_%02d.bmp", name, img.month, img.day, (2000 + img.year_minus_2000),
-             img.hour, img.minute, ++count);
+    // snprintf(filename, 128, "/%s_%d-%d-%d_%02d-%02d_%02d.bmp", name, img.month, img.day, (2000 +
+    // img.year_minus_2000),
+    //  img.hour, img.minute, ++count);
+    snprintf(filename, 128, "/%02d_%d-%d-%d_%02d-%02d.bmp", ++count, img.month, img.day, (2000 + img.year_minus_2000),
+             img.hour, img.minute);
 
+    // Convert Casio pixel data to 8bpp 1-channel grayscale image
     for (int i = 0; i < W * H; i++) {
-        // two pixels stored in a byte, 2bpp in 2 nybbles
+        // two pixels stored per byte, in 2 nybbles
         uint8_t b = img.pixel[i / 2];
         uint8_t pixel = (i % 2 == 0) ? b & 0xf : b >> 4;
-        expanded[i] = 255 - pixel * 17;  // max value 0xf * 17 = 255
+        // 0 is white (reverse of normal), expand 4 bits to 0-255 (15 * 17 = 255)
+        expanded[i] = 255 - pixel * 17;
     }
 
-    Serial.printf("Writing image to %s...", filename);
-
-    // if (!FFat.begin()) {
-    //     ESP_LOGE(TAG, "Failed to open filesystem");
-    //     return false;
-    // }
+    Serial.printf("Writing image to %s...\n", filename);
     File f = FFat.open(filename, FILE_WRITE);
-    stbi_write_bmp_to_func(stbi_write_callback, &f, W, H, 1, expanded);
+    stbi_write_bmp_to_func(stbi_write_cb, &f, W, H, 1, expanded);
     f.close();
-
-    ESP_LOGD(TAG, "After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
-    // FFat.end();
+    Serial.printf("After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
 
     return true;
 }

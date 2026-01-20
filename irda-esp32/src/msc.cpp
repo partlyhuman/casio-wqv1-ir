@@ -22,18 +22,26 @@ uint32_t sect_size;
 uint32_t total_size;
 uint32_t sect_cnt;
 
+void shutdown() {
+    MSC.end();
+    FFat.end();
+}
+
 void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     // So far haven't seen this called, probably when USB disconnected/connected,
     // But in our application this is going to also provide & cut power, so what would you even do
     // Serial.printf("EVENT base=%d id=%d\n", event_base, event_id);
 }
 
+// If this never works, maybe we just make it do nothing (readonly FS)
 int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize) {
     wl_write(flash_handle, (size_t)((lba * sect_size) + offset), (const void*)buffer, (size_t)bufsize);
+
     // flash on writes
     static uint8_t f = HIGH;
     digitalWrite(LED_BUILTIN, f);
     f = (f == HIGH) ? LOW : HIGH;
+    // TODO something so it doesn't stay on - handle loop, or vxtask/watchdog
 
     return bufsize;
 }
@@ -50,12 +58,19 @@ bool onStartStop(uint8_t power_condition, bool start, bool load_eject) {
     // Without this, drive just keeps coming back
     if (!start && load_eject) {
         MSC.mediaPresent(false);
-        // TODO return to non-msc mode
+        delay(250);
+
+        // Maybe, maybe not
+        shutdown();
+        ESP.restart();
     }
     return true;
 }
 
 void init() {
+    // Start with a clean disk every time
+    FFat.format();
+
     if (!FFat.begin(false)) {
         return;
     }
@@ -75,7 +90,6 @@ void init() {
     MSC.mediaPresent(false);
     MSC.begin(sect_cnt, sect_size);
     USB.begin();
-    digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void begin() {
