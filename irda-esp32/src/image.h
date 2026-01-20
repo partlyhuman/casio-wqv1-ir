@@ -20,5 +20,6 @@ static_assert(sizeof(Image) == 0x1C3D, "Image size mismatch");
 bool init();
 bool save(const Image &img);
 void debug(const Image &img);
+void exportImagesFromDump(const char *path);
 
 }  // namespace Image

@@ -2,10 +2,11 @@
 
 #include <string.h>
 
+#include "FFat.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 
 #include "../lib/stb_image_write.h"
-#include "FFat.h"
 
 namespace Image {
 
@@ -78,6 +79,22 @@ bool save(const Image &img) {
     Serial.printf("After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
 
     return true;
+}
+
+void exportImagesFromDump(const char *path) {
+    Image *img = new Image{};
+
+    File dump = FFat.open(path, FILE_READ);
+    size_t count = dump.size() / sizeof(Image);
+    dump.seek(0);
+    for (size_t i = 0; i < count; i++) {
+        Serial.printf("Reading out image %d/%d\n", i, count);
+        dump.readBytes(reinterpret_cast<char *>(img), sizeof(Image));
+        save(*img);
+    }
+    dump.close();
+
+    delete img;
 }
 
 }  // namespace Image

@@ -1,3 +1,4 @@
+#include "FFat.h"
 #include "config.h"
 #include "esp_log.h"
 #include "frame.h"
@@ -5,6 +6,16 @@
 #include "msc.h"
 
 static const char *TAG = "Main";
+static const char *DUMP_PATH = "/dump.bin";
+
+// Packets seem to be up to 192 bytes
+constexpr size_t BUFFER_SIZE = 256;
+static uint8_t readBuffer[BUFFER_SIZE];
+uint8_t sessionId = 0xff;
+size_t len;
+size_t dataLen;
+uint8_t addr;
+uint8_t ctrl;
 
 void onButton();
 
@@ -33,15 +44,6 @@ void setup() {
 
     ESP_LOGI(TAG, "Setup complete");
 }
-
-// Packets seem to be up to 192 bytes
-constexpr size_t BUFFER_SIZE = 256;
-static uint8_t readBuffer[BUFFER_SIZE];
-uint8_t sessionId = 0xff;
-size_t len;
-size_t dataLen;
-uint8_t addr;
-uint8_t ctrl;
 
 static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expectedMinLength = -1) {
     if (addr != expectedAddr) {
@@ -118,6 +120,42 @@ bool openSession() {
     return true;
 }
 
+bool downloadToFile(size_t imgCount, File &dump) {
+    // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
+    constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
+
+    uint8_t getPacketNum = 0x31;
+    uint8_t retPacketNum = 0x42;
+    for (size_t offset = 0; offset < IMAGE_SIZE * imgCount;) {
+        sendRetry(sessionId, getPacketNum);
+        if (!expect(sessionId, retPacketNum)) {
+            ESP_LOGI(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
+            continue;
+        }
+        if (readBuffer[0] != 0x05) {
+            ESP_LOGW(TAG, "Expected data to start with 0x05, retrying");
+            continue;
+        }
+
+        // skip the initial 0x05
+        size_t packetLen = dataLen - 1;
+        dump.write(readBuffer + 1, packetLen);
+        offset += packetLen;
+
+        // increment packet ids
+        getPacketNum = getPacketNum + 0x20;  // natural wraparound 0xF1 + 0x20 = 0x11
+        retPacketNum += 0x2;
+        if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
+
+        int curImg = offset / IMAGE_SIZE;
+        Serial.printf("Image %d/%d\t| %d bytes\t| %0.0f%%\n", curImg, imgCount, offset,
+                      100.0f * offset / imgCount / IMAGE_SIZE);
+    }
+
+    ESP_LOGI(TAG, "Done reading all images!");
+    return true;
+}
+
 bool downloadImages() {
     ESP_LOGI(TAG, "--- UPLOAD ---");
 
@@ -141,52 +179,10 @@ bool downloadImages() {
 
     ESP_LOGI(TAG, "Upload preamble completed!");
 
-    // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
-    // What if we actually dump everything into a file and then postprocess it
-    constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
-    auto *img = reinterpret_cast<uint8_t *>(malloc(IMAGE_SIZE));
+    File dump = FFat.open(DUMP_PATH, FILE_WRITE, true);
+    downloadToFile(imgCount, dump);
+    dump.close();
 
-    uint8_t getPacketNum = 0x31;
-    uint8_t retPacketNum = 0x42;
-    for (int imgNum = 0; imgNum < imgCount; imgNum++) {
-        ESP_LOGI(TAG, "Requesting image %d/%d", imgNum, imgCount);
-        memset(img, 0, IMAGE_SIZE);
-
-        for (size_t offset = 0; offset < IMAGE_SIZE;) {
-            sendRetry(sessionId, getPacketNum);
-            if (!expect(sessionId, retPacketNum)) {
-                ESP_LOGI(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
-                continue;
-            }
-            if (readBuffer[0] != 0x05) {
-                ESP_LOGW(TAG, "Expected data to start with 0x05, retrying");
-                continue;
-            }
-
-            // skip the initial 0x05
-            size_t packetLen = dataLen - 1;
-            if (offset + packetLen > IMAGE_SIZE) {
-                Serial.printf("Overflow: offset=%u len=%u size=%u\n", offset, dataLen, IMAGE_SIZE);
-                break;
-            }
-            // skip the initial 0x05
-            memcpy(img + offset, readBuffer + 1, packetLen);
-            offset += packetLen;
-
-            // increment packet ids
-            getPacketNum = getPacketNum + 0x20;  // natural wraparound 0xF1 + 0x20 = 0x11
-            retPacketNum += 0x2;
-            if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
-
-            ESP_LOGI(TAG, "Read %d bytes, total %d bytes / %d images", dataLen, offset, offset / sizeof(Image::Image));
-        }
-        ESP_LOGI(TAG, "Got image %d/%d", imgNum, imgCount);
-
-        Image::save(*reinterpret_cast<Image::Image *>(img));
-    }
-
-    free(img);
-    ESP_LOGI(TAG, "Done reading all images!");
     return true;
 }
 
@@ -225,6 +221,8 @@ void loop() {
         if (openSession()) {
             if (downloadImages()) {
                 closeSession();
+                Image::exportImagesFromDump(DUMP_PATH);
+
                 mscMode = true;
                 MassStorage::begin();
             }
