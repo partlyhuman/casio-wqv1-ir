@@ -56,7 +56,7 @@ bool save(const Image &img) {
     // snprintf(basepath, PATH_MAX_LEN, "/%02d_%d-%d-%d_%02d-%02d", ++count, img.month, img.day,
     //          (2000 + img.year_minus_2000), img.hour, img.minute);
 
-    LOGI(TAG, "Writing image to %s...\n", basepath);
+    LOGI(TAG, "Writing image to %s...", basepath);
 
     // try to set timestamp when writing file
     setSystemTime(img);
@@ -82,7 +82,7 @@ bool save(const Image &img) {
         f.close();
     }
 
-    LOGI(TAG, "After writing: %d/%d total %d\n", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
+    LOGI(TAG, "After writing: %d/%d total %d", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
 
     return true;
 }
@@ -97,7 +97,7 @@ void exportImagesFromDump(File &dump) {
     size_t count = dump.size() / sizeof(Image);
     dump.seek(0);
     for (size_t i = 0; i < count; i++) {
-        LOGD(TAG, "Reading out image %d/%d\n", i, count);
+        LOGD(TAG, "Reading out image %d/%d", i, count);
         dump.readBytes(reinterpret_cast<char *>(img), sizeof(Image));
         save(*img);
     }

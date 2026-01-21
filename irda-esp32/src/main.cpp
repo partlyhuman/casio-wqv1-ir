@@ -12,7 +12,7 @@ static const char *DUMP_PATH = "/dump.bin";
 // Packets seem to be up to 192 bytes
 constexpr size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
-bool storedInPsram;
+bool usePsram;
 uint8_t sessionId = 0xff;
 size_t len;
 size_t dataLen;
@@ -27,9 +27,12 @@ void setup() {
     // Doing this means it doesn't start until serial connected?
     // while (!Serial);
 
-    // about 1mb
-    PSRamFS.setPartitionSize(min(ESP.getFreePsram(), 99 * sizeof(Image::Image)));
-    PSRamFS.begin(true);
+    // Should be a little under 1mb. PSRamFS will use heap if not available, we want to prevent that though
+    size_t psramSize = 100 * sizeof(Image::Image) + 1024;
+    if (psramInit() && psramSize < ESP.getMaxAllocPsram() && psramSize < ESP.getFreePsram()) {
+        LOGD(TAG, "Initializing PSRAM...");
+        usePsram = PSRamFS.setPartitionSize(psramSize) && PSRamFS.begin(true);
+    }
 
     MassStorage::init();
     Image::init();
@@ -156,7 +159,7 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
         int curImg = offset / IMAGE_SIZE;
-        LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%\n", curImg + 1, imgCount, offset,
+        LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%", curImg + 1, imgCount, offset,
              100.0f * offset / imgCount / IMAGE_SIZE);
     }
 
@@ -195,13 +198,11 @@ bool downloadImages() {
 
     size_t size = imgCount * sizeof(Image::Image);
     File dump;
-    if (size < PSRamFS.freeBytes()) {
+    if (usePsram) {
         LOGD(TAG, "Using psram");
         dump = PSRamFS.open(DUMP_PATH, FILE_WRITE);
-        storedInPsram = true;
     } else {
         dump = FFat.open(DUMP_PATH, FILE_WRITE);
-        storedInPsram = false;
     }
     if (!dump) {
         LOGE(TAG, "Failed to allocate file %d bytes", size);
@@ -248,7 +249,7 @@ void loop() {
         if (openSession()) {
             if (downloadImages()) {
                 closeSession();
-                File dump = storedInPsram ? PSRamFS.open(DUMP_PATH, FILE_READ) : FFat.open(DUMP_PATH, FILE_READ);
+                File dump = usePsram ? PSRamFS.open(DUMP_PATH, FILE_READ) : FFat.open(DUMP_PATH, FILE_READ);
                 Image::exportImagesFromDump(dump);
                 dump.close();
 
