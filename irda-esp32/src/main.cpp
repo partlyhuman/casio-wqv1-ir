@@ -30,7 +30,7 @@ void setup() {
     delay(100);
 
     // Doing this means it doesn't start until serial connected?
-    while (!Serial);
+    // while (!Serial);
 
     pinMode(PIN_LED, OUTPUT);
     digitalWrite(PIN_LED, LED_OFF);
@@ -127,11 +127,15 @@ bool openSession() {
     // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
     readBuffer[4] = sessionId;
 
+    Display::showConnectingScreen(0);
+
     do {
         // >	FFh	93h	<hh> <mm> <ss> <ff><assigned address>
         sendRetry(0xff, 0x93, readBuffer, 5, 1);
         // <	<adr>	63h	(possibly repeated)
     } while (!expect(sessionId, 0x63));
+
+    Display::showConnectingScreen(1);
 
     do {
         // >	<adr>	11h
@@ -139,17 +143,13 @@ bool openSession() {
         // <	<adr>	01h
     } while (!expect(sessionId, 0x01));
 
-    // Display::print().printf(STR_SESSION_FORMAT, sessionId);
-    // Display::update();
+    Display::showConnectingScreen(2);
 
     LOGI(TAG, "Handshake established!");
     return true;
 }
 
 bool downloadToFile(size_t imgCount, Stream &stream) {
-    // Display::print().printf(STR_IMAGES_FORMAT, imgCount);
-    // Display::update();
-
     // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
     constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
 
@@ -176,12 +176,10 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
         retPacketNum += 0x2;
         if (retPacketNum >= 0x50) retPacketNum = 0x40;  // cycles 40-4E,40-4E...
 
-        int curImg = offset / IMAGE_SIZE;
-        LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%", curImg + 1, imgCount, offset,
-             100.0f * offset / imgCount / IMAGE_SIZE);
-        // Display::print().printf("Progress: image %d/%d\n%d bytes\n%0.0f%%", curImg + 1, imgCount, offset,
-        // 100.0f * offset / imgCount / IMAGE_SIZE);
-        // Display::update();
+        // int curImg = offset / IMAGE_SIZE;
+        // LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%", curImg + 1, imgCount, offset,
+        //      100.0f * offset / imgCount / IMAGE_SIZE);
+        Display::showProgressScreen(offset, IMAGE_SIZE * imgCount, IMAGE_SIZE);
     }
 
     LOGI(TAG, "Done reading all images!");
@@ -191,19 +189,22 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
 bool downloadImages() {
     LOGI(TAG, "--- UPLOAD ---");
 
-    // Display::print().printf(STR_REQUESTING_IMAGES);
-    // Display::update();
-
     // >	<adr>	10h	01h
     static const uint8_t args_1[] = {0x1};
     IRDA.flush();
     sendRetry(sessionId, 0x10, args_1, sizeof(args_1));
     // <	<adr>	21h
     if (!expect(sessionId, 0x21)) return false;
+
+    Display::showConnectingScreen(3);
+
     // >	<adr>	11h
     sendRetry(sessionId, 0x11);
     // <	<adr>	20h	07h FAh 1Ch 3Dh <num_images>
     if (!expect(sessionId, 0x20, 5)) return false;
+
+    Display::showConnectingScreen(4);
+
     size_t imgCount = readBuffer[4];
     LOGI(TAG, "Watch says %d images available", imgCount);
     // >	<adr>	32h	06h
@@ -211,6 +212,8 @@ bool downloadImages() {
     sendRetry(sessionId, 0x32, args_6, sizeof(args_6));
     // <	<adr>	41h
     if (!expect(sessionId, 0x41)) return false;
+
+    Display::showConnectingScreen(5);
 
     LOGI(TAG, "Upload preamble completed!");
 
@@ -277,6 +280,7 @@ void loop() {
                 Image::exportImagesFromDump(dump);
                 dump.close();
 
+                Display::showMountedScreen();
                 Serial.println("\n\nAttaching mass storage device, go look for your images!");
                 Serial.println("Don't forget to eject when done!");
 

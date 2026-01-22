@@ -2,6 +2,7 @@
 
 #include "FFat.h"
 #include "ctime"
+#include "display.h"
 #include "log.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -97,6 +98,8 @@ void exportImagesFromDump(File &dump) {
     size_t count = dump.size() / sizeof(Image);
     dump.seek(0);
     for (size_t i = 0; i < count; i++) {
+        const size_t M = 1000;
+        Display::showProgressScreen(M * i, M * count, M);
         LOGD(TAG, "Reading out image %d/%d", i, count);
         dump.readBytes(reinterpret_cast<char *>(img), sizeof(Image));
         save(*img);

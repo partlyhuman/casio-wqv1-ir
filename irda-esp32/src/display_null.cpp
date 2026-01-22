@@ -1,16 +1,20 @@
 #ifndef ENABLE_SSD1306
-#include <Arduino.h>
+#include "display.h"
+
 namespace Display {
 
 bool init() {
     return false;
 }
-
 void showIdleScreen() {
 }
-
-size_t printf(const char *format, ...) {
-    return 0;
+void showConnectingScreen(int offset) {
+}
+void showProgressScreen(size_t bytes, size_t totalBytes, size_t bytesPerImage, const char* label) {
+}
+void showMountedScreen() {
+}
+void indicate(Indicator i) {
 }
 
 }  // namespace Display
