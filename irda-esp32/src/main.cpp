@@ -7,11 +7,12 @@
 #include "log.h"
 #include "msc.h"
 
-// Implementation of https://www.mgroeber.de/wqvprot.html
+// Implementation of https://www.mgroeber.de/wqvprot.html by @partlyhuman
 
 static const char *TAG = "Main";
 static const char *DUMP_PATH = "/dump.bin";
 
+constexpr size_t MAX_IMAGES = 100;
 // Packets seem to be up to 192 bytes
 constexpr size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
@@ -36,7 +37,7 @@ void setup() {
     digitalWrite(PIN_LED, LED_OFF);
 
     // Should be a little under 1mb. PSRamFS will use heap if not available, we want to prevent that though
-    size_t psramSize = 100 * sizeof(Image::Image) + 1024;
+    size_t psramSize = MAX_IMAGES * sizeof(Image::Image) + 1024;
     if (psramInit() && psramSize < ESP.getMaxAllocPsram() && psramSize < ESP.getFreePsram()) {
         LOGD(TAG, "Initializing PSRAM...");
         usePsram = PSRamFS.setPartitionSize(psramSize) && PSRamFS.begin(true);
@@ -83,10 +84,10 @@ static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expect
 
 bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, int retries = 5) {
     for (int retry = 0; retry < retries; retry++) {
-        // digitalWrite(PIN_LED, LED_OFF);
+        digitalWrite(PIN_LED, LED_OFF);
         Frame::writeFrame(a, c, d, l);
         // Important: don't do any heavy work here or you'll miss the beginning of the buffer
-        // digitalWrite(PIN_LED, LED_ON);
+        digitalWrite(PIN_LED, LED_ON);
         len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
 
         if (len <= 0) {
@@ -279,6 +280,7 @@ void loop() {
                 File dump = usePsram ? PSRamFS.open(DUMP_PATH, FILE_READ) : FFat.open(DUMP_PATH, FILE_READ);
                 Image::exportImagesFromDump(dump);
                 dump.close();
+                delay(250);  // Give the 100% screen some time to register
 
                 Display::showMountedScreen();
                 Serial.println("\n\nAttaching mass storage device, go look for your images!");
@@ -289,9 +291,9 @@ void loop() {
                 MassStorage::begin();
                 return;
             }
-        } else {
-            LOGE(TAG, "Failure, restarting from handshake");
-            delay(1000);
         }
+
+        LOGE(TAG, "Failure, restarting from handshake");
+        delay(1000);
     }
 }

@@ -98,12 +98,12 @@ void exportImagesFromDump(File &dump) {
     size_t count = dump.size() / sizeof(Image);
     dump.seek(0);
     for (size_t i = 0; i < count; i++) {
-        const size_t M = 1000;
-        Display::showProgressScreen(M * i, M * count, M);
+        Display::showProgressScreen(i, count, 1, "CONVERTING");
         LOGD(TAG, "Reading out image %d/%d", i, count);
         dump.readBytes(reinterpret_cast<char *>(img), sizeof(Image));
         save(*img);
     }
+    Display::showProgressScreen(9999, 10000, 10000 / count, "CONVERTING");
 
     delete img;
 }

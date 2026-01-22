@@ -12,10 +12,6 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
 
-static const unsigned char PROGMEM image_RX_bits[] = {0x40, 0x90, 0xa0, 0xa8, 0xa0, 0x90, 0x40};
-
-static const unsigned char PROGMEM image_TX_bits[] = {0x10, 0x48, 0x28, 0xa8, 0x28, 0x48, 0x10};
-
 namespace Display {
 
 const char* TAG = "Display";
@@ -154,6 +150,8 @@ void showProgressScreen(size_t bytes, size_t totalBytes, size_t bytesPerImage, c
 }
 
 void indicate(Indicator i) {
+    static const unsigned char PROGMEM image_RX_bits[] = {0x40, 0x90, 0xa0, 0xa8, 0xa0, 0x90, 0x40};
+    static const unsigned char PROGMEM image_TX_bits[] = {0x10, 0x48, 0x28, 0xa8, 0x28, 0x48, 0x10};
     display.fillRect(86, 1, 5, 7, 0);
     switch (i) {
         case Indicator::TX:
