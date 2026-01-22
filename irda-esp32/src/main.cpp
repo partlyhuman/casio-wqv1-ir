@@ -167,6 +167,8 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
             continue;
         }
 
+        // TODO abort after N failures
+
         // skip the initial 0x05
         size_t packetLen = dataLen - 1;
         stream.write(readBuffer + 1, packetLen);
