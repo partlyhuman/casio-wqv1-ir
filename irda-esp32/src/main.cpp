@@ -10,16 +10,10 @@
 static const char *TAG = "Main";
 static const char *DUMP_PATH = "/dump.bin";
 
-const char *STR_IDLE = "Waiting for watch...";
-const char *STR_HANDSHAKING = "Establishing session...";
-const char *STR_SESSION_FORMAT = "Established session %d";
-const char *STR_REQUESTING_IMAGES = "Requesting all images...";
-const char *STR_IMAGES_FORMAT = "Downloading %d images...";
-char *state;
-
 // Packets seem to be up to 192 bytes
 constexpr size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
+// Whether we're streaming the transferred data into PSRAM or FAT
 bool usePsram;
 uint8_t sessionId = 0xff;
 size_t len;
@@ -108,9 +102,11 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
 }
 
 bool openSession() {
+    Display::showIdleScreen();
+
     LOGI(TAG, "\n\n--- HANDSHAKING ---");
-    Display::print().printf(STR_IDLE);
-    Display::update();
+    // Display::print().printf(STR_IDLE);
+    // Display::update();
 
     sessionId = 0xff;
 
@@ -121,8 +117,8 @@ bool openSession() {
     // <	FFh	A3h	<hh> <mm> <ss> <ff>
     if (!expect(0xff, 0xa3, 4)) return false;
 
-    Display::print().printf(STR_HANDSHAKING);
-    Display::update();
+    // Display::print().printf(STR_HANDSHAKING);
+    // Display::update();
 
     // Generate session ID
     sessionId = rand() % 0xff;
@@ -141,16 +137,16 @@ bool openSession() {
         // <	<adr>	01h
     } while (!expect(sessionId, 0x01));
 
-    Display::print().printf(STR_SESSION_FORMAT, sessionId);
-    Display::update();
+    // Display::print().printf(STR_SESSION_FORMAT, sessionId);
+    // Display::update();
 
     LOGI(TAG, "Handshake established!");
     return true;
 }
 
 bool downloadToFile(size_t imgCount, Stream &stream) {
-    Display::print().printf(STR_IMAGES_FORMAT, imgCount);
-    Display::update();
+    // Display::print().printf(STR_IMAGES_FORMAT, imgCount);
+    // Display::update();
 
     // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
     constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
@@ -181,9 +177,9 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
         int curImg = offset / IMAGE_SIZE;
         LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%", curImg + 1, imgCount, offset,
              100.0f * offset / imgCount / IMAGE_SIZE);
-        Display::print().printf("Progress: image %d/%d\t| %d bytes\t| %0.0f%%", curImg + 1, imgCount, offset,
-                                100.0f * offset / imgCount / IMAGE_SIZE);
-        Display::update();
+        // Display::print().printf("Progress: image %d/%d\n%d bytes\n%0.0f%%", curImg + 1, imgCount, offset,
+        // 100.0f * offset / imgCount / IMAGE_SIZE);
+        // Display::update();
     }
 
     LOGI(TAG, "Done reading all images!");
@@ -193,8 +189,8 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
 bool downloadImages() {
     LOGI(TAG, "--- UPLOAD ---");
 
-    Display::print().printf(STR_REQUESTING_IMAGES);
-    Display::update();
+    // Display::print().printf(STR_REQUESTING_IMAGES);
+    // Display::update();
 
     // >	<adr>	10h	01h
     static const uint8_t args_1[] = {0x1};

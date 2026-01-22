@@ -1,6 +1,9 @@
+#ifdef ENABLE_SSD1306
+
 #include "display.h"
 
 #include "Adafruit_SSD1306.h"
+#include "_1980v23P04_16.h"
 #include "config.h"
 #include "log.h"
 
@@ -16,9 +19,6 @@ const char* TAG = "Display";
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 bool init() {
-    Serial.printf("Initializing display... Default SDA=%d SCL=%d Configured SDA=%d SCL=%d\n", SDA, SCL, PIN_I2C_SDA,
-                  PIN_I2C_SCL);
-    Serial.flush();
     if (!Wire.setPins(PIN_I2C_SDA, PIN_I2C_SCL) || !Wire.begin()) {
         LOGE(TAG, "Can't use these pins for I2C: SDA=%d SCL=%d", PIN_I2C_SDA, PIN_I2C_SCL);
         return false;
@@ -35,20 +35,45 @@ bool init() {
     return true;
 }
 
-Print& print() {
-    display.clearDisplay();
-    display.setFont(NULL);
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
+bool z = false;
+void showIdleScreen() {
+    if (z) return;
+    z = true;
+    display.stopscroll();
 
-    return display;
+    display.clearDisplay();
+    display.setTextColor(1);
+    display.setTextWrap(false);
+    display.setFont(&_1980v23P04_16);
+    display.setCursor(2, 10);
+    display.print("WAITING FOR WATCH...");
+
+    display.setCursor(24, 39);
+    display.print("IR > COM > PC");
+
+    display.setCursor(46, 29);
+    display.print("Select");
+
+    display.drawRect(50, 50, 24, 11, 1);
+
+    display.drawCircle(55, 55, 3, 1);
+
+    display.drawCircle(68, 55, 3, 1);
+
+    display.display();
+
+    LOGI(TAG, "Starting scroller");
+    display.startscrollright(1, 10);
 }
 
-void update() {
-    // display.drawCircle(10, 10, 20, WHITE);
-    // display.drawCircle(10, 10, 10, BLACK);
-    display.display();
+size_t printf(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    size_t result = display.printf(format, args);
+    va_end(args);
+    return result;
 }
 
 }  // namespace Display
+
+#endif

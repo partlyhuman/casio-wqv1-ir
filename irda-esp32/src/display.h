@@ -1,10 +1,11 @@
 #pragma once
-#include <Arduino.h>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace Display {
 
 bool init();
-void update();
-Print& print();
+void showIdleScreen();
+size_t printf(const char* format, ...);
 
 }  // namespace Display
