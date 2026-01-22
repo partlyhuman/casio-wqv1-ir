@@ -7,6 +7,8 @@
 #include "log.h"
 #include "msc.h"
 
+// Implementation of https://www.mgroeber.de/wqvprot.html
+
 static const char *TAG = "Main";
 static const char *DUMP_PATH = "/dump.bin";
 
@@ -26,8 +28,9 @@ void onButton();
 void setup() {
     Serial.begin(115200);
     delay(100);
+
     // Doing this means it doesn't start until serial connected?
-    // while (!Serial);
+    while (!Serial);
 
     pinMode(PIN_LED, OUTPUT);
     digitalWrite(PIN_LED, LED_OFF);
@@ -37,6 +40,9 @@ void setup() {
     if (psramInit() && psramSize < ESP.getMaxAllocPsram() && psramSize < ESP.getFreePsram()) {
         LOGD(TAG, "Initializing PSRAM...");
         usePsram = PSRamFS.setPartitionSize(psramSize) && PSRamFS.begin(true);
+    }
+    if (!usePsram) {
+        LOGD(TAG, "Using FFAT instead of PSRAM...");
     }
 
     MassStorage::init();
@@ -77,11 +83,11 @@ static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expect
 
 bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, int retries = 5) {
     for (int retry = 0; retry < retries; retry++) {
+        // digitalWrite(PIN_LED, LED_OFF);
         Frame::writeFrame(a, c, d, l);
-
-        digitalWrite(PIN_LED, LED_ON);
+        // Important: don't do any heavy work here or you'll miss the beginning of the buffer
+        // digitalWrite(PIN_LED, LED_ON);
         len = IRDA.readBytesUntil(Frame::FRAME_EOF, readBuffer, BUFFER_SIZE);
-        digitalWrite(PIN_LED, LED_OFF);
 
         if (len <= 0) {
             LOGW(TAG, "Timeout, retrying %d...", retry);
@@ -104,10 +110,6 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
 bool openSession() {
     Display::showIdleScreen();
 
-    LOGI(TAG, "\n\n--- HANDSHAKING ---");
-    // Display::print().printf(STR_IDLE);
-    // Display::update();
-
     sessionId = 0xff;
 
     // >	FFh	B3h	(possibly repeated)
@@ -121,7 +123,7 @@ bool openSession() {
     // Display::update();
 
     // Generate session ID
-    sessionId = rand() % 0xff;
+    sessionId = rand() % 0x0f;
     // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
     readBuffer[4] = sessionId;
 
@@ -281,8 +283,10 @@ void loop() {
                 Serial.flush();
                 mscMode = true;
                 MassStorage::begin();
+                return;
             }
         } else {
+            LOGE(TAG, "Failure, restarting from handshake");
             delay(1000);
         }
     }

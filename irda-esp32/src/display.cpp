@@ -12,6 +12,10 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
 
+static const unsigned char PROGMEM image_RX_bits[] = {0x40, 0x90, 0xa0, 0xa8, 0xa0, 0x90, 0x40};
+
+static const unsigned char PROGMEM image_TX_bits[] = {0x10, 0x48, 0x28, 0xa8, 0x28, 0x48, 0x10};
+
 namespace Display {
 
 const char* TAG = "Display";
@@ -35,24 +39,8 @@ bool init() {
     return true;
 }
 
-bool z = false;
 void showIdleScreen() {
-    if (z) return;
-    z = true;
-    display.stopscroll();
-
     display.clearDisplay();
-    display.setTextColor(1);
-    display.setTextWrap(false);
-    display.setFont(&_1980v23P04_16);
-    display.setCursor(2, 10);
-    display.print("WAITING FOR WATCH...");
-
-    display.setCursor(24, 39);
-    display.print("IR > COM > PC");
-
-    display.setCursor(46, 29);
-    display.print("Select");
 
     display.drawRect(50, 50, 24, 11, 1);
 
@@ -60,10 +48,40 @@ void showIdleScreen() {
 
     display.drawCircle(68, 55, 3, 1);
 
-    display.display();
+    display.setTextColor(1);
+    display.setTextWrap(false);
+    display.setFont(&_1980v23P04_16);
+    display.setCursor(26, 43);
+    display.print("AND AIM HERE");
 
-    LOGI(TAG, "Starting scroller");
-    display.startscrollright(1, 10);
+    display.setCursor(24, 32);
+    display.print("IR > COM > PC");
+
+    display.setCursor(47, 21);
+    display.print("PRESS");
+
+    display.drawLine(0, 9, 127, 9, 1);
+
+    display.setCursor(93, 7);
+    display.print("WQV-1");
+
+    display.setCursor(1, 7);
+    display.print("SEARCHING");
+
+    display.display();
+}
+
+void indicate(Indicator i) {
+    display.fillRect(86, 1, 5, 7, 0);
+    switch (i) {
+        case Indicator::TX:
+            display.drawBitmap(86, 1, image_TX_bits, 5, 7, 1);
+            break;
+        case Indicator::RX:
+            display.drawBitmap(86, 1, image_RX_bits, 5, 7, 1);
+            break;
+    }
+    display.display();
 }
 
 size_t printf(const char* format, ...) {
