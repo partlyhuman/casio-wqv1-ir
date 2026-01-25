@@ -12,9 +12,9 @@
 #define PIN_BUTTON 0
 
 // Vishay TFDU4101
-#define PIN_SD 1
-#define PIN_TX 5
-#define PIN_RX 3
+#define PIN_SD 14
+#define PIN_TX 10
+#define PIN_RX 13
 
 // I2C Display
 #define PIN_I2C_SDA SDA
