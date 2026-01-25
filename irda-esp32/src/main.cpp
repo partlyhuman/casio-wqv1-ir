@@ -4,6 +4,7 @@
 #include "display.h"
 #include "frame.h"
 #include "image.h"
+#include "irda_hal.h"
 #include "log.h"
 #include "msc.h"
 

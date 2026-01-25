@@ -1,6 +1,7 @@
 #include "frame.h"
 
 #include "config.h"
+#include "irda_hal.h"
 #include "log.h"
 
 #define DEBUG_WRITE
@@ -38,7 +39,7 @@ void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) 
     // To run on hardware without IRDA-flavour UART support,
     // you can introduce a simple MCP2120 https://www.microchip.com/en-us/product/MCP2120
     // Alternatively, bitbang it, PIO would probably be a great match here.
-    IRDA_UART.conf0.irda_tx_en = true;
+    IRDA_tx(true);
 
     IRDA.write(FRAME_BOF);
 
@@ -63,7 +64,7 @@ void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) 
     IRDA.write(FRAME_EOF);
     IRDA.flush(true);
 
-    IRDA_UART.conf0.irda_tx_en = false;
+    IRDA_tx(false);
 }
 
 bool parseFrame(uint8_t *buf, size_t len, size_t &outLen, uint8_t &addr, uint8_t &control) {
