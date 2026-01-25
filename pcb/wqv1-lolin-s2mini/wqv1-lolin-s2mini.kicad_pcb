@@ -1172,7 +1172,8 @@
 			(uuid "890ba061-6323-4bc8-8acf-96d8b16997a0")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/3d/oled_128x64_25x66mm.stp"
+		(model "${KIPRJMOD}/../Libraries/oled_128x64.stp"
+			(opacity 0.9600)
 			(offset
 				(xyz 0 -1.97 2.54)
 			)
@@ -1259,7 +1260,7 @@
 			(at 0 0 90)
 			(unlocked yes)
 			(layer "F.Fab")
-			(uuid "05c909bc-9b35-40d8-96c7-d0f8ee489a0c")
+			(uuid "d7ec7c89-4b14-4eb5-b840-3bf863b295e0")
 			(effects
 				(font
 					(size 0.75 0.75)
@@ -1283,7 +1284,16 @@
 			(net 5 "Net-(U1-IREDANODE)")
 			(pinfunction "IREDANODE")
 			(pintype "unspecified")
-			(uuid "c3fddaa2-63db-4f72-a657-47b84a65eae6")
+			(uuid "d38768c0-c8b6-4aa1-9cc9-2f1caf19599c")
+		)
+		(pad "2" smd rect
+			(at -0.800101 2.499995 90)
+			(size 2.5 0.5588)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net 3 "unconnected-(U1-IREDCATHODE-Pad2)")
+			(pinfunction "IREDCATHODE")
+			(pintype "unspecified+no_connect")
+			(uuid "1bb4dc19-7471-458a-a029-af8d8b688f7f")
 		)
 		(pad "2" smd rect
 			(at -0.800101 2.499995 90)
@@ -1294,15 +1304,6 @@
 			(pintype "unspecified+no_connect")
 			(uuid "52c4c0e2-838b-4b6a-a45f-add92c34c0ac")
 		)
-		(pad "2" smd rect
-			(at -0.800101 2.499995 90)
-			(size 2.5 0.5588)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 3 "unconnected-(U1-IREDCATHODE-Pad2)")
-			(pinfunction "IREDCATHODE")
-			(pintype "unspecified+no_connect")
-			(uuid "52c4c0e2-838b-4b6a-a45f-add92c34c0ac")
-		)
 		(pad "3" smd rect
 			(at -0.8001 1.499997 90)
 			(size 2.5 0.5588)
@@ -1319,7 +1320,7 @@
 			(net 21 "/GPIO10")
 			(pinfunction "TXD")
 			(pintype "unspecified")
-			(uuid "3d421549-fe92-4e3d-8cae-8209e9eb2955")
+			(uuid "f69e9626-a8d9-4e0a-b43c-14dce14b923c")
 		)
 		(pad "4" smd rect
 			(at -0.8001 0.499999 90)
@@ -1328,7 +1329,7 @@
 			(net 18 "/GPIO13")
 			(pinfunction "RXD")
 			(pintype "unspecified")
-			(uuid "7fc69b4c-e52f-4a9b-acd6-ce1eaa1b88a6")
+			(uuid "4cc3af91-6472-489e-88ac-10126fb2f425")
 		)
 		(pad "4" smd rect
 			(at -0.8001 0.499999 90)
@@ -1346,7 +1347,7 @@
 			(net 12 "/GPIO14")
 			(pinfunction "SD")
 			(pintype "unspecified")
-			(uuid "d1be5d09-2866-4fc1-9ac7-e34de626f36e")
+			(uuid "2289443d-35e3-4a62-8cc5-5b2a2c043128")
 		)
 		(pad "5" smd rect
 			(at -0.8001 -0.499999 90)
@@ -1373,7 +1374,7 @@
 			(net 37 "Net-(U1-VCC1)")
 			(pinfunction "VCC1")
 			(pintype "power_in")
-			(uuid "bf3ba165-52a4-4f79-ac87-055c96b8fc9a")
+			(uuid "c607212f-af57-4229-9bcb-2c02c928ead5")
 		)
 		(pad "7" smd rect
 			(at -0.800101 -2.499995 90)
@@ -1391,7 +1392,7 @@
 			(net 17 "unconnected-(U1-NC-Pad7)_1")
 			(pinfunction "NC")
 			(pintype "no_connect")
-			(uuid "58bc1821-8514-4db8-9852-b523c11b2eb2")
+			(uuid "c70daa38-6c84-46d7-88d5-85a026a9a2a7")
 		)
 		(pad "8" smd rect
 			(at -0.8001 -3.499993 90)
@@ -1400,7 +1401,7 @@
 			(net 2 "/GND")
 			(pinfunction "GND")
 			(pintype "power_out")
-			(uuid "378512d9-5e5c-4c89-8506-7d8345b0f999")
+			(uuid "03e77f2d-20f7-472d-8253-2fddd40defe0")
 		)
 		(pad "8" smd rect
 			(at -0.8001 -3.499993 90)
