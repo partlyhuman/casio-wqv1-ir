@@ -1,3 +1,6 @@
+/**
+ * Implementation of WQV-1 protocol documented at https://www.mgroeber.de/wqvprot.html by @partlyhuman
+ */
 #include "FFat.h"
 #include "PSRamFS.h"
 #include "config.h"
@@ -7,8 +10,6 @@
 #include "irda_hal.h"
 #include "log.h"
 #include "msc.h"
-
-// Implementation of WQV-1 protocol documented at https://www.mgroeber.de/wqvprot.html by @partlyhuman
 
 static const char *TAG = "Main";
 static const char *DUMP_PATH = "/dump.bin";
@@ -71,6 +72,10 @@ void setup() {
     LOGI(TAG, "Setup complete");
 }
 
+/**
+ * Small helper to validate that a received frame has the expected properties (the addr & control fields).
+ * Checking the length of the data is optional. Checking the contents of the data is out of scope.
+ */
 static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expectedMinLength = -1) {
     if (addr != expectedAddr) {
         LOGD(TAG, "Expected addr=%02x got addr=%02x\n", expectedAddr, addr);
@@ -87,6 +92,13 @@ static inline bool expect(uint8_t expectedAddr, uint8_t expectedCtrl, int expect
     return true;
 }
 
+/**
+ * Attempt to send a frame (from this device to the watch) and receive a frame in response. Every send has a response.
+ * Will not return true unless a VALID frame is received (checksum must match, etc.)
+ * Postcondition: after this method returns true, the globals addr, ctrl will be set to received values; the global
+ * readBuffer will contain the DATA field of the frame after unescaping etc, and the global dataLen will contain the
+ * length of valid data in that buffer.
+ */
 bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, int retries = 5) {
     for (int retry = 0; retry < retries; retry++) {
         digitalWrite(PIN_LED, LED_OFF);
@@ -113,6 +125,14 @@ bool sendRetry(uint8_t a, uint8_t c, const uint8_t *d = nullptr, size_t l = 0, i
     return false;
 }
 
+/**
+ * The first phase of any IR sync is opening the session. Performs a handshake that determines the "address" or "session
+ * id", and prepares the watch to receive commands.
+ * The open session is different in that the watch will send some responses multiple times (in response to subsequent
+ * commands) before continuing to acknowledge the next command.
+ * We also exit early if there is no reply to the first "hello?" send. This allows the caller to decide how frequently
+ * to poll for a watch being here.
+ */
 bool openSession() {
     Display::showIdleScreen();
 
@@ -125,8 +145,12 @@ bool openSession() {
     // <	FFh	A3h	<hh> <mm> <ss> <ff>
     if (!expect(0xff, 0xa3, 4)) return false;
 
-    // Generate session ID
-    sessionId = rand() % 0x0f;
+    // We don't use the returned time. Maybe a future implementation could... tell you if your watch's time needs to be
+    // adjusted? Except this device doesn't know the correct time either.
+
+    // Generate a random session ID. Should avoid any escaped codes. 0 seems fine but we disallow it anyway.
+    // No actual need to ensure its uniqueness.
+    sessionId = (rand() % 0x1a) + 1;
     // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
     readBuffer[4] = sessionId;
 
@@ -137,7 +161,7 @@ bool openSession() {
         sendRetry(0xff, 0x93, readBuffer, 5, 1);
         // <	<adr>	63h	(possibly repeated)
         if (expect(sessionId, 0x63)) break;
-        if (i++ > ABORT_AFTER_RETRIES) return false;
+        if (++i > ABORT_AFTER_RETRIES) return false;
     }
 
     Display::showConnectingScreen(1);
@@ -147,17 +171,27 @@ bool openSession() {
         sendRetry(sessionId, 0x11);
         // <	<adr>	01h
         if (expect(sessionId, 0x01)) break;
-        if (i++ > ABORT_AFTER_RETRIES) return false;
+        if (++i > ABORT_AFTER_RETRIES) return false;
     }
 
     Display::showConnectingScreen(2);
 
-    LOGI(TAG, "Handshake established!");
+    LOGI(TAG, "Handshake complete, connection established!");
     return true;
 }
 
+/**
+ * Once a "download all images" synchronization sequence has been established by downloadImages(), performs the
+ * download.
+ * The images are presented as a flat array of these packed Image structs. Individual frames can include bytes from two
+ * contiguous Images, so we focus on getting all the bytes (into a "dump") and then processing them afterwards. The dump
+ * is stored in a file as it may be quite large for memory. This method doesn't care where the file is, just sees a
+ * stream.
+ * The download is performed by a sequence of "request address", "respond address data" pairs.  The "address" here is
+ * not the actual byte offset but two repeating sequences, which is sufficient to guarantee ordering. Mgroeber calls
+ * this "pumping" data.
+ */
 bool downloadToFile(size_t imgCount, Stream &stream) {
-    // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
     const size_t IMAGE_SIZE = sizeof(Image::Image);
 
     // fixed initial packet sequence IDs
@@ -205,9 +239,11 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
     return true;
 }
 
+/**
+ * Establishes a full download of all images on the watch. The actual downloading is performed by downloadToFile() to a
+ * file that we prepare for it. This handshaking will determine how many images are going to be received.
+ */
 bool downloadImages() {
-    LOGI(TAG, "--- UPLOAD ---");
-
     // >	<adr>	10h	01h
     static const uint8_t args_1[]{0x1};
     IRDA.flush();
@@ -260,6 +296,10 @@ bool downloadImages() {
     return true;
 }
 
+/**
+ * After a successful download, cleanly disconnects from the watch. After this is performed, the watch goes back into
+ * the IR menu.
+ */
 bool closeSession() {
     LOGI(TAG, "Closing session...");
     // >	<adr>	54h	06h

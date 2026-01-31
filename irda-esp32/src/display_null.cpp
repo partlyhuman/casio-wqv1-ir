@@ -14,8 +14,6 @@ void showProgressScreen(size_t bytes, size_t totalBytes, size_t bytesPerImage, c
 }
 void showMountedScreen() {
 }
-void indicate(Indicator i) {
-}
 
 }  // namespace Display
 #endif

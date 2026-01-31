@@ -5,6 +5,9 @@
 #include "display.h"
 #include "log.h"
 
+#define META_INI_FORMAT
+#define META_JSON_FORMAT
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 
 #include "../lib/stb_image_write.h"
@@ -50,7 +53,7 @@ bool save(const Image &img) {
     }
 
     // Filenames need to start with / and the base path of /ffat is transparently handled by FFat
-    constexpr size_t PATH_MAX_LEN = 128;
+    const size_t PATH_MAX_LEN = 128;
     char basepath[PATH_MAX_LEN];
     char filename[PATH_MAX_LEN];
     snprintf(basepath, PATH_MAX_LEN, "/WQV%02d", ++count);
@@ -70,7 +73,8 @@ bool save(const Image &img) {
         f.close();
     }
 
-    // Write meta info
+// Write meta info
+#ifdef META_INI_FORMAT
     snprintf(filename, PATH_MAX_LEN, "%s.meta", basepath);
     f = FFat.open(filename, FILE_WRITE, true);
     if (f) {
@@ -78,10 +82,24 @@ bool save(const Image &img) {
                  img.minute);
         f.print("title = ");
         f.write((uint8_t *)img.name, sizeof(Image::name));
-        f.print("\n\n");
+        f.print("\n");
         f.flush();
         f.close();
     }
+#endif
+#ifdef META_JSON_FORMAT
+    snprintf(filename, PATH_MAX_LEN, "%s.json", basepath);
+    f = FFat.open(filename, FILE_WRITE, true);
+    if (f) {
+        f.printf("{\n\t\"date\": \"%04d-%02d-%02dT%02d:%02d\",", 2000 + img.year_minus_2000, img.month, img.day,
+                 img.hour, img.minute);
+        f.print("\n\t\"title\": \"");
+        f.write((uint8_t *)img.name, sizeof(Image::name));
+        f.print("\"\n}\n");
+        f.flush();
+        f.close();
+    }
+#endif
 
     LOGI(TAG, "After writing: %d/%d total %d", FFat.usedBytes(), FFat.freeBytes(), FFat.totalBytes());
 
