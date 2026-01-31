@@ -28,17 +28,6 @@ void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) 
     Serial.println("");
 #endif
 #endif
-    // Communicate with the TFDU4101. Sending UART as normal is not sufficient.
-    // It needs to use the IRDA physical layer https://www.vishay.com/docs/82513/physicallayer.pdf
-    // which is a fairly simple transformation of typical UART signalling.
-    //
-    // ESP32 supports this in hardware.
-    // Setting Serial.setMode(UART_MODE_IRDA) is half the battle, we also need this special sauce:
-    // UART.conf0.irda_tx_en = true while transmitting.
-    //
-    // To run on hardware without IRDA-flavour UART support,
-    // you can introduce a simple MCP2120 https://www.microchip.com/en-us/product/MCP2120
-    // Alternatively, bitbang it, PIO would probably be a great match here.
     IRDA_tx(true);
 
     IRDA.write(FRAME_BOF);
@@ -56,8 +45,6 @@ void writeFrame(uint8_t addr, uint8_t control, const uint8_t *data, size_t len) 
         writeEscaped(b);
     }
 
-    // IRDA.write((uint8_t)((checksum >> 8) & 0xff));
-    // IRDA.write((uint8_t)(checksum & 0xff));
     writeEscaped((checksum >> 8) & 0xff);
     writeEscaped(checksum & 0xff);
 

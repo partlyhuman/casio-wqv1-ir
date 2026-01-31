@@ -8,24 +8,28 @@
 #include "log.h"
 #include "msc.h"
 
-// Implementation of https://www.mgroeber.de/wqvprot.html by @partlyhuman
+// Implementation of WQV-1 protocol documented at https://www.mgroeber.de/wqvprot.html by @partlyhuman
 
 static const char *TAG = "Main";
 static const char *DUMP_PATH = "/dump.bin";
 
-constexpr size_t MAX_IMAGES = 100;
+const size_t ABORT_AFTER_RETRIES = 50;
+const size_t MAX_IMAGES = 100;
 // Packets seem to be up to 192 bytes
-constexpr size_t BUFFER_SIZE = 256;
+const size_t BUFFER_SIZE = 256;
 static uint8_t readBuffer[BUFFER_SIZE];
+// Transmission buffer and state variables
+static uint8_t sessionId = 0xff;
+static size_t len;
+static size_t dataLen;
+static uint8_t addr;
+static uint8_t ctrl;
 // Whether we're streaming the transferred data into PSRAM or FAT
-bool usePsram;
-uint8_t sessionId = 0xff;
-size_t len;
-size_t dataLen;
-uint8_t addr;
-uint8_t ctrl;
+static bool usePsram;
+// Two operation modes, false if IR comms mode, true if USB disk mode
+volatile static bool mscMode = false;
 
-void onButton();
+void onManualModeToggleButton();
 
 void setup() {
     Serial.begin(115200);
@@ -38,6 +42,7 @@ void setup() {
     digitalWrite(PIN_LED, LED_OFF);
 
     // Should be a little under 1mb. PSRamFS will use heap if not available, we want to prevent that though
+    usePsram = false;
     size_t psramSize = MAX_IMAGES * sizeof(Image::Image) + 1024;
     if (psramInit() && psramSize < ESP.getMaxAllocPsram() && psramSize < ESP.getFreePsram()) {
         LOGD(TAG, "Initializing PSRAM...");
@@ -51,17 +56,16 @@ void setup() {
     Image::init();
     Display::init();
 
-    // Probably remove this for production
+    // Button manually toggles between Sync/USB (IR/MSC) mode
     pinMode(PIN_BUTTON, INPUT_PULLUP);
-    attachInterrupt(PIN_BUTTON, onButton, FALLING);
+    attachInterrupt(PIN_BUTTON, onManualModeToggleButton, FALLING);
 
-    // Shutdown pin, tied to ground now
+    // TFDU4101 Shutdown pin, powered by bus power, safe to tie to ground
     // pinMode(PIN_SD, OUTPUT);
     // digitalWrite(PIN_SD, LOW);
     // delay(1);
 
-    IRDA.begin(115200, SERIAL_8N1, PIN_RX, PIN_TX);
-    IRDA.setMode(UART_MODE_IRDA);
+    IRDA_setup(IRDA);
     while (!IRDA);
 
     LOGI(TAG, "Setup complete");
@@ -121,9 +125,6 @@ bool openSession() {
     // <	FFh	A3h	<hh> <mm> <ss> <ff>
     if (!expect(0xff, 0xa3, 4)) return false;
 
-    // Display::print().printf(STR_HANDSHAKING);
-    // Display::update();
-
     // Generate session ID
     sessionId = rand() % 0x0f;
     // echo back data adding the session ID to the end <hh> <mm> <ss> <ff><assigned address>
@@ -131,19 +132,23 @@ bool openSession() {
 
     Display::showConnectingScreen(0);
 
-    do {
+    for (size_t i = 0;;) {
         // >	FFh	93h	<hh> <mm> <ss> <ff><assigned address>
         sendRetry(0xff, 0x93, readBuffer, 5, 1);
         // <	<adr>	63h	(possibly repeated)
-    } while (!expect(sessionId, 0x63));
+        if (expect(sessionId, 0x63)) break;
+        if (i++ > ABORT_AFTER_RETRIES) return false;
+    }
 
     Display::showConnectingScreen(1);
 
-    do {
+    for (size_t i = 0;;) {
         // >	<adr>	11h
         sendRetry(sessionId, 0x11);
         // <	<adr>	01h
-    } while (!expect(sessionId, 0x01));
+        if (expect(sessionId, 0x01)) break;
+        if (i++ > ABORT_AFTER_RETRIES) return false;
+    }
 
     Display::showConnectingScreen(2);
 
@@ -153,27 +158,37 @@ bool openSession() {
 
 bool downloadToFile(size_t imgCount, Stream &stream) {
     // NOTE - multi image downloads DO cross image boundaries, so doing it one at a time is no good
-    constexpr size_t IMAGE_SIZE = sizeof(Image::Image);
+    const size_t IMAGE_SIZE = sizeof(Image::Image);
 
+    // fixed initial packet sequence IDs
     uint8_t getPacketNum = 0x31;
     uint8_t retPacketNum = 0x42;
-    for (size_t offset = 0; offset < IMAGE_SIZE * imgCount;) {
-        sendRetry(sessionId, getPacketNum);
+    for (size_t position = 0, retries = 0; position < IMAGE_SIZE * imgCount;) {
+        if (retries > ABORT_AFTER_RETRIES) {
+            LOGE(TAG, "Aborting sync after %d retries", ABORT_AFTER_RETRIES);
+            return false;
+        }
+
+        // >    <adr> <getPacketNum>
+        if (!sendRetry(sessionId, getPacketNum, nullptr, 0, 1)) {
+            retries++;
+            continue;
+        }
+        // <    <adr> <retPacketNum> 05h <data...>
         if (!expect(sessionId, retPacketNum)) {
-            LOGI(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
+            LOGW(TAG, "Mismatched Send %02x expect ret %02x, retrying", getPacketNum, retPacketNum);
+            retries++;
             continue;
         }
-        if (readBuffer[0] != 0x05) {
+        if (readBuffer[0] != 0x5) {
             LOGW(TAG, "Expected data to start with 0x05, retrying");
+            retries++;
             continue;
         }
+        retries = 0;
 
-        // TODO abort after N failures
-
-        // skip the initial 0x05
-        size_t packetLen = dataLen - 1;
-        stream.write(readBuffer + 1, packetLen);
-        offset += packetLen;
+        // Append to file, skipping the initial 0x05
+        position += stream.write(readBuffer + 1, dataLen - 1);
 
         // increment packet ids
         getPacketNum = getPacketNum + 0x20;  // natural wraparound 0xF1 + 0x20 = 0x11
@@ -183,7 +198,7 @@ bool downloadToFile(size_t imgCount, Stream &stream) {
         // int curImg = offset / IMAGE_SIZE;
         // LOGI(TAG, "Progress: image %d/%d\t| %d bytes\t| %0.0f%%", curImg + 1, imgCount, offset,
         //      100.0f * offset / imgCount / IMAGE_SIZE);
-        Display::showProgressScreen(offset, IMAGE_SIZE * imgCount, IMAGE_SIZE);
+        Display::showProgressScreen(position, IMAGE_SIZE * imgCount, IMAGE_SIZE);
     }
 
     LOGI(TAG, "Done reading all images!");
@@ -194,7 +209,7 @@ bool downloadImages() {
     LOGI(TAG, "--- UPLOAD ---");
 
     // >	<adr>	10h	01h
-    static const uint8_t args_1[] = {0x1};
+    static const uint8_t args_1[]{0x1};
     IRDA.flush();
     sendRetry(sessionId, 0x10, args_1, sizeof(args_1));
     // <	<adr>	21h
@@ -212,7 +227,7 @@ bool downloadImages() {
     size_t imgCount = readBuffer[4];
     LOGI(TAG, "Watch says %d images available", imgCount);
     // >	<adr>	32h	06h
-    static const uint8_t args_6[] = {0x6};
+    static const uint8_t args_6[]{0x6};
     sendRetry(sessionId, 0x32, args_6, sizeof(args_6));
     // <	<adr>	41h
     if (!expect(sessionId, 0x41)) return false;
@@ -248,22 +263,25 @@ bool downloadImages() {
 bool closeSession() {
     LOGI(TAG, "Closing session...");
     // >	<adr>	54h	06h
-    static const uint8_t args_6[] = {0x6};
+    static const uint8_t args_6[]{0x6};
     sendRetry(sessionId, 0x54, args_6, sizeof(args_6));
-    // <	<adr>	61h // NOTE this seems incorrect, using 0x43 matching observed behaviour
-    if (!expect(sessionId, 0x43)) return false;
+
+    // <	<adr>	61h
+    // TODO observing a number of different responses (0x61, 0x43,...) in real world here
+    // LOGD(TAG, "Close session reply to 0x54 is 0x%02x followed by %d bytes, expected 0x61 or 0x43", ctrl, dataLen);
+    if (!(expect(sessionId, 0x43) || expect(sessionId, 0x61))) return false;
+
     // >	<adr>	53h
     sendRetry(sessionId, 0x53);
     // <	<adr>	63h
     if (!expect(sessionId, 0x63)) return false;
 
+    LOGI(TAG, "Successful close session handshake. Disconnected.");
     sessionId = 0xff;
     return true;
 }
 
-volatile bool mscMode = false;
-
-void onButton() {
+void onManualModeToggleButton() {
     mscMode = !mscMode;
     Serial.printf("Changed mode -> %s\n", mscMode ? "MSC" : "IRDA");
     if (mscMode) {
@@ -279,7 +297,9 @@ void loop() {
     } else {
         if (openSession()) {
             if (downloadImages()) {
+                // Don't require a clean disconnect to continue
                 closeSession();
+
                 File dump = usePsram ? PSRamFS.open(DUMP_PATH, FILE_READ) : FFat.open(DUMP_PATH, FILE_READ);
                 Image::exportImagesFromDump(dump);
                 dump.close();
@@ -296,7 +316,7 @@ void loop() {
             }
         }
 
-        LOGE(TAG, "Failure, restarting from handshake");
+        // LOGE(TAG, "Failure or no watch present, restarting from handshake");
         delay(1000);
     }
 }
