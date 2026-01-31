@@ -1,7 +1,7 @@
 #pragma once
 
 // 0 - Errors, 1 - Warnings, 2 - Info, 3 - Debug, 4 - Verbose
-#define LOG_LEVEL 4
+#define LOG_LEVEL 2
 
 #define ANSI_RED "\033[31m"
 #define ANSI_YELLOW "\033[33m"

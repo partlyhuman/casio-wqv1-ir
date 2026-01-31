@@ -8,17 +8,18 @@
 #include "display.h"
 #include "log.h"
 
+// Must define this before including stb_image_write
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../lib/stb_image_write.h"
+
 // Which metadata format/s should we use? Feel free to enable multiple or none.
-#define META_INI_FORMAT
+#define META_TITLE_IFNOTBLANK_FORMAT
+#undef META_INI_FORMAT
 #undef META_JSON_FORMAT
 // Which image format/s should we use? Feel free to enable multiple.
 #define IMAGE_PNG_FORMAT
 #undef IMAGE_JPG_FORMAT
 #undef IMAGE_BMP_FORMAT
-
-// Must define this before including stb_image_write
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../lib/stb_image_write.h"
 
 namespace Image {
 
@@ -54,6 +55,8 @@ void stbi_write_cb(void *context, void *data, int size) {
 }
 
 bool save(const Image *img) {
+    File f;
+
     // Convert Casio pixel data to 8bpp 1-channel grayscale image
     for (int i = 0; i < W * H; i++) {
         // two pixels stored per byte, in 2 nybbles
@@ -84,8 +87,6 @@ bool save(const Image *img) {
     int count = timestampCounts[time]++;
     if (count > 0) basepath += "_" + std::to_string(count);
 
-    File f;
-
 #ifdef IMAGE_PNG_FORMAT
     filename = basepath + ".png";
     LOGI(TAG, "Writing image to %s...", filename.c_str());
@@ -112,8 +113,19 @@ bool save(const Image *img) {
 #endif
 
 // Write meta info
+#ifdef META_TITLE_IFNOTBLANK_FORMAT
+    std::string title(img->name, sizeof(Image::name));
+    if (title.find_first_not_of(' ') != std::string::npos) {
+        f = FFat.open((basepath + ".txt").c_str(), FILE_WRITE, true);
+        if (f) {
+            title = title.substr(0, title.find_last_not_of(' ') + 1);
+            f.print(title.c_str());
+            f.close();
+        }
+    }
+#endif
 #ifdef META_INI_FORMAT
-    f = FFat.open((basepath + ".meta").c_str(), FILE_WRITE, true);
+    f = FFat.open((basepath + ".txt").c_str(), FILE_WRITE, true);
     if (f) {
         f.printf("date = %04d-%02d-%02dT%02d:%02d\n", 2000 + img->year_minus_2000, img->month, img->day, img->hour,
                  img->minute);
@@ -143,24 +155,24 @@ bool save(const Image *img) {
 }
 
 void exportImagesFromDump(File &dump) {
-    // We'll reuse a single Image, but we want it on the heap, it's big
-    Image *img = new Image{};
-
     if (!dump) {
         LOGE(TAG, "No file!");
         return;
     }
     size_t count = dump.size() / sizeof(Image);
     dump.seek(0);
+    // We'll reuse a single Image, but we want it on the heap, it's big
+    Image *img = new Image{};
     for (size_t i = 0; i < count; i++) {
         Display::showProgressScreen(i, count, 1, "CONVERTING");
         LOGD(TAG, "Reading out image %d/%d", i, count);
         dump.readBytes(reinterpret_cast<char *>(img), sizeof(Image));
         save(img);
     }
-    Display::showProgressScreen(9999, 10000, 10000 / count, "CONVERTING");
-
     delete img;
+
+    // Forced 100% screen
+    Display::showProgressScreen(9999, 10000, 10000 / count, "CONVERTING");
 }
 
 }  // namespace Image
